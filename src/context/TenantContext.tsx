@@ -26,7 +26,13 @@ const TenantContext = createContext<TenantContextValue | null>(null)
 
 function TenantProvider({ children }: PropsWithChildren) {
   const queryClient = useQueryClient()
-  const [selectedTenantId, setSelectedTenantId] = useState(getRequiredTenantId())
+  const [selectedTenantId, setSelectedTenantId] = useState(() => {
+    try {
+      return getRequiredTenantId()
+    } catch {
+      return ''
+    }
+  })
   const previousTenantIdRef = useRef(selectedTenantId)
 
   useEffect(() => {
@@ -56,6 +62,15 @@ function TenantProvider({ children }: PropsWithChildren) {
     }),
     [selectedTenantId],
   )
+
+  if (!selectedTenantId) {
+    return (
+      <div style={{ padding: '2rem', fontFamily: 'sans-serif', color: '#dc2626' }}>
+        <strong>Configuration Error:</strong> <code>VITE_TENANT_ID</code> is not set.
+        Add it as an environment variable in your Vercel project settings.
+      </div>
+    )
+  }
 
   return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>
 }

@@ -76,8 +76,10 @@ src/
 ```env
 VITE_TENANT_ID=<default-tenant-uuid>
 VITE_TENANT_NAME=<default-tenant-name>
-VITE_API_BASE_URL=http://localhost:3000
+VITE_API_BASE_URL=http://localhost:3000/api/v1
 ```
+
+`VITE_API_BASE_URL` is only used in local development. Production builds always call the same-origin `/api/v1` path and rely on the Vercel rewrite.
 
 ## API Integration
 

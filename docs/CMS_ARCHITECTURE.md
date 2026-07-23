@@ -47,6 +47,7 @@ On tenant change, the app performs:
 ### 4.1 Axios client
 Centralized axios client configuration includes:
 - base URL from environment (`VITE_API_BASE_URL`, fallback to localhost)
+- base URL from environment (`VITE_API_BASE_URL`, fallback to `/api/v1`)
 - request interceptor that appends `X-Tenant-ID`
 
 ### 4.2 Read services
@@ -161,6 +162,8 @@ CMS local env must define:
 - VITE_API_BASE_URL
 - VITE_TENANT_ID
 - VITE_TENANT_NAME
+
+For Vercel deployments, the frontend should call the same-origin `/api/v1` path and let `vercel.json` proxy it to the backend.
 
 Backend local env must allow CORS for CMS origin and tenant header (`X-Tenant-ID`).
 
