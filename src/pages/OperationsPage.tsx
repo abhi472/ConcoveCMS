@@ -62,6 +62,19 @@ function getCompensatingTransactionType(transactionType: TransactionType): Trans
   return 'IST_DISPATCH'
 }
 
+function getRequestedTransactionType(value: string | null): TransactionType {
+  if (
+    value === 'INWARD' ||
+    value === 'OUTWARD' ||
+    value === 'IST_DISPATCH' ||
+    value === 'IST_RECEIPT'
+  ) {
+    return value
+  }
+
+  return 'INWARD'
+}
+
 function OperationsPage() {
   const { selectedTenantId, selectedTenantName } = useTenantContext()
   const {
@@ -94,7 +107,9 @@ function OperationsPage() {
     [entities],
   )
 
-  const [activeSection, setActiveSection] = useState<'procurement' | 'ledger' | 'sync'>('procurement')
+  const [activeSection, setActiveSection] = useState<'procurement' | 'ledger' | 'sync'>(() =>
+    searchParams.get('mode') === 'ledger' ? 'ledger' : 'procurement',
+  )
 
   const [procurementDraft, setProcurementDraft] = useState({
     po_number: '',
@@ -115,10 +130,10 @@ function OperationsPage() {
   const [statusDrafts, setStatusDrafts] = useState<Record<string, POStatus>>({})
 
   const [ledgerForm, setLedgerForm] = useState({
-    site_id: '',
-    material_id: '',
+    site_id: searchParams.get('site') ?? '',
+    material_id: searchParams.get('material') ?? '',
     po_id: '',
-    transaction_type: 'INWARD' as TransactionType,
+    transaction_type: getRequestedTransactionType(searchParams.get('type')),
     quantity: '',
     source_entity_id: '',
     destination_entity_id: '',
@@ -142,7 +157,15 @@ function OperationsPage() {
   const [batchError, setBatchError] = useState('')
   const [fluidError, setFluidError] = useState('')
   const [ledgerError, setLedgerError] = useState('')
-  const [operationNotice, setOperationNotice] = useState<OperationNotice | null>(null)
+  const [operationNotice, setOperationNotice] = useState<OperationNotice | null>(() =>
+    searchParams.get('mode') === 'ledger' &&
+    (searchParams.has('site') || searchParams.has('material'))
+      ? {
+          tone: 'info',
+          message: 'Loaded site and material context from the inventory dashboard. Review the entry before submitting.',
+        }
+      : null,
+  )
   const [isSubmittingBatch, setIsSubmittingBatch] = useState(false)
   const [isSubmittingFluid, setIsSubmittingFluid] = useState(false)
   const [submissionContext, setSubmissionContext] = useState<SubmissionContext>('standard')
