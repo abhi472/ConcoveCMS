@@ -19,6 +19,44 @@ All API calls are prefixed with `/api/v1` and require:
 - `entities`: Polymorphic actors (VENDOR, INTERNAL_SITE, SUBCONTRACTOR, EMPLOYEE)
 - `purchase_orders`: Draft/approved procurement contracts with line items
 
+This endpoint remains a bootstrap compatibility contract. Operational catalog screens use the resource-specific APIs below. Archived materials and entities are excluded from bootstrap results.
+
+### Materials Catalog
+
+**Endpoints:**
+- `GET /api/v1/materials?tenant_id&search&status&base_uom_id&sort&direction&page&page_size`
+- `POST /api/v1/materials`
+- `GET /api/v1/materials/{material_id}?tenant_id`
+- `PATCH /api/v1/materials/{material_id}`
+- `POST /api/v1/materials/{material_id}/archive`
+- `POST /api/v1/materials/{material_id}/restore`
+
+Material codes are normalized server-side to lowercase kebab-case and are unique within a tenant. Archive is blocked with HTTP 409 while active site assignments or open purchase-order lines exist. Historical ledger references never block archive and remain intact.
+
+### Entities Catalog
+
+**Endpoints:**
+- `GET /api/v1/entities?tenant_id&search&entity_type&status&page&page_size`
+- `POST /api/v1/entities`
+- `GET /api/v1/entities/{entity_id}?tenant_id`
+- `PATCH /api/v1/entities/{entity_id}`
+- `POST /api/v1/entities/{entity_id}/archive`
+- `POST /api/v1/entities/{entity_id}/restore`
+- `GET /api/v1/entities/{entity_id}/sites?tenant_id`
+- `PUT /api/v1/entities/{entity_id}/sites/{site_id}`
+- `DELETE /api/v1/entities/{entity_id}/sites/{site_id}?tenant_id`
+
+Profile fields are validated by entity type. Employees and subcontractors use `ASSIGNED` site relationships and may have one primary site. Vendors use non-restrictive `PREFERRED` relationships. Site archive is blocked by non-zero stock, open target POs, or active associations; vendor archive is blocked by open POs; employee/subcontractor archive is blocked by active site associations.
+
+### Site-Material Assignments
+
+**Endpoints:**
+- `GET /api/v1/inventory/site-materials?tenant_id&site_id`
+- `PUT /api/v1/inventory/sites/{site_id}/materials/{material_id}`
+- `DELETE /api/v1/inventory/sites/{site_id}/materials/{material_id}?tenant_id`
+
+Unassignment is lifecycle-based and returns structured HTTP 409 blockers for non-zero stock or open purchase orders. New transaction writes require an active assignment.
+
 ### Inventory Dashboard (Read-Only)
 
 **Endpoint:** `GET /api/v1/inventory/dashboard`
@@ -103,6 +141,8 @@ All API calls are prefixed with `/api/v1` and require:
 - All entities (`site_id`, `source_entity_id`, `destination_entity_id`, `po_id`) must belong to same tenant
 - Optional `correction_of_transaction_id` references parent transaction for immutable ledger corrections
 - Transaction types: INWARD, OUTWARD, IST_DISPATCH, IST_RECEIPT
+- Sites, materials, source entities, and destination entities must be active.
+- The material must be actively assigned to the transaction site.
 
 ### Fluid Dispense (Rapid Write)
 
@@ -137,7 +177,7 @@ Individual records in the batch may succeed or fail. Check `results` array for p
 
 ## Frontend Implementation Notes
 
-- Use `masterDataQueryKey(tenantId)` for React Query cache keys
+- Use resource-specific `materialsQueryKey`, `entitiesQueryKey`, `entitySitesQueryKey`, and `siteMaterialsQueryKey` keys for managed catalogs. Retain `masterDataQueryKey` for bootstrap consumers.
 - Persist failed 207 records in `SyncRetryContext` for retry workflows
 - Store successful transactions in sync history for correction draft creation
 - Display tenant-mismatch errors to operator immediately

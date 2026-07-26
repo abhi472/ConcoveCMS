@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { fetchMasterData } from '../api/masterDataService'
 import { inventoryDashboardQueryKey, masterDataQueryKey, siteMaterialsQueryKey } from '../api/queryKeys'
 import {
@@ -111,9 +112,10 @@ function AssignmentRow({
 
 function SiteMaterialsPage() {
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
   const { selectedTenantId, selectedTenantName } = useTenantContext()
   const [siteSelection, setSiteSelection] = useState('')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(() => searchParams.get('material') ?? '')
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
 
   const masterDataQuery = useQuery({

@@ -55,6 +55,11 @@ Master data service:
 - required query param: `tenant_id`
 - optional query param: `last_synced_at`
 
+Managed resource services:
+- `materialsService`: paginated material CRUD, archive, and restore
+- `entitiesService`: paginated entity CRUD, archive, restore, and site associations
+- `siteMaterialService`: site assignment thresholds, assignment, and safe unassignment
+
 ### 4.3 Sync/write services
 Transactions service currently includes:
 - POST `/sync/transactions/batch`
@@ -90,6 +95,9 @@ Tenant-aware keys are mandatory for tenant-scoped data.
 
 Pattern:
 - master-data key includes tenant ID and optional sync watermark
+- managed resource keys include tenant ID plus normalized list filters
+- entity-site keys include tenant and entity IDs
+- mutations invalidate only affected resource, bootstrap, assignment, and dashboard roots
 
 ### 6.2 Error handling
 Standardized API error utility handles:
@@ -106,9 +114,10 @@ Persistent app shell contains:
 
 ### 7.2 Main routes
 - `/` Dashboard: tenant-filtered site selection and inventory placeholder view
-- `/materials` Material Catalog + material draft panel
+- `/materials` Managed tenant material catalog
+- `/site-materials` Site-first assignment and threshold workspace
 - `/operations` Operations Control Workspace
-- `/entities` Tenant-grouped entity workspace
+- `/entities` Managed sites, vendors, employees, and subcontractors
 - `/sync-monitor` Failed retry queue and immutable correction trail
 
 ## 8. Operations Control Workspace
@@ -151,10 +160,14 @@ The dedicated Sync Monitor route separates two operational concerns:
 	- supports local filtering, search, timestamps, and per-chain collapse/expand behavior
 
 ## 10. Materials Workflow Rule
-Material draft input normalizes `material_code` to lowercase kebab-case before staging.
+Material input previews lowercase kebab-case normalization, while the backend performs authoritative normalization before persistence.
 
 Example:
 - "TMT Steel 12mm" -> "tmt-steel-12mm"
+
+Materials use archive/restore rather than deletion. Archive requires no active site assignments and no open PO lines. Entity archive blockers depend on entity type. Historical ledger references remain readable after archive.
+
+Employees and subcontractors may be assigned to multiple sites with one optional primary site. Vendor site preferences affect defaults only and do not restrict tenant-wide vendor use.
 
 ## 11. Environment Contract (Local Dev)
 CMS local env must define:
@@ -174,8 +187,19 @@ Implemented now:
 - Sync Monitor retry persistence across page reloads
 - Immutable correction drafting for successful ledger writes
 - Sync Monitor audit tooling: failure badges, timestamps, grouped correction chains, search, counters, and tenant-scoped local clearing
+- Live inventory dashboard and assignment-aware risk counts
+- Site-material assignment management with threshold editing and structured unassignment blockers
+- Managed tenant material catalog with create, edit, search, filter, sort, pagination, archive, and restore
+- Managed entity catalogs with type-specific profiles, archive/restore, multi-site people assignments, and vendor preferences
+- Backend enforcement that archived or unassigned master data cannot be used for new inventory writes
 
 Planned next:
 - wire procurement drafts to backend PO write endpoints when available
 - add automated unit/integration tests for tenant and 207 behaviors
 - formalize backend correction metadata handling and lineage display
+
+Deployment order for the current catalog phase:
+1. Apply backend `V5__entity_management_and_audit.sql` to a non-production database and then production.
+2. Deploy the backend material/entity resource APIs.
+3. Verify resource endpoints through Render and the Vercel proxy.
+4. Deploy the CMS managed catalog pages.

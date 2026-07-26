@@ -8,11 +8,13 @@ export type TransactionType = 'INWARD' | 'OUTWARD' | 'IST_DISPATCH' | 'IST_RECEI
 
 export interface Material {
   id: string
+  tenant_id?: string
   material_code: string
   description: string
   base_uom_id: UOM
   issue_uom_id: UOM
   conversion_factor: number
+  archived_at?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -22,6 +24,18 @@ export interface Entity {
   tenant_id: string
   entity_type: EntityType
   name: string
+  archived_at?: string | null
+  location_code?: string | null
+  address?: string | null
+  manager_name?: string | null
+  capacity_notes?: string | null
+  contact_name?: string | null
+  phone?: string | null
+  gst_number?: string | null
+  employee_code?: string | null
+  designation?: string | null
+  specialty?: string | null
+  registration_number?: string | null
   created_at?: string
   updated_at?: string
 }
