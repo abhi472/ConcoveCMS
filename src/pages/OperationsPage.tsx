@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { formatApiError } from '../api/errorUtils'
-import { masterDataQueryKey } from '../api/queryKeys'
+import { masterDataQueryKey, purchaseOrdersQueryKey } from '../api/queryKeys'
 import {
   createFluidDispense,
   syncTransactionsBatch,
 } from '../api/transactionsService'
 import { fetchMasterData } from '../api/masterDataService'
+import {
+  createPurchaseOrder,
+  fetchPurchaseOrders,
+  formatPurchaseOrderError,
+  updatePurchaseOrderStatus,
+} from '../api/purchaseOrdersService'
 import POProgressTracker from '../components/POProgressTracker'
 import type {
   BatchSyncResponse,
@@ -19,13 +25,8 @@ import type {
   InventoryTransaction,
   POItem,
   POStatus,
-  PurchaseOrder,
   TransactionType,
 } from '../types/schema'
-
-interface PurchaseOrderDraft extends Omit<PurchaseOrder, 'id'> {
-  id: string
-}
 
 interface ProcurementLineDraft extends POItem {
   id: string
@@ -77,6 +78,7 @@ function getRequestedTransactionType(value: string | null): TransactionType {
 
 function OperationsPage() {
   const { selectedTenantId, selectedTenantName } = useTenantContext()
+  const queryClient = useQueryClient()
   const {
     getFailedRecord,
     getSyncHistoryRecord,
@@ -90,10 +92,14 @@ function OperationsPage() {
     queryKey: masterDataQueryKey(selectedTenantId),
     queryFn: () => fetchMasterData({ tenantId: selectedTenantId }),
   })
+  const { data: purchaseOrderData, isLoading: purchaseOrdersLoading } = useQuery({
+    queryKey: purchaseOrdersQueryKey(selectedTenantId),
+    queryFn: () => fetchPurchaseOrders(selectedTenantId),
+  })
 
   const materials = data?.data.materials ?? []
   const entities = data?.data.entities ?? []
-  const purchaseOrders = data?.data.purchase_orders ?? []
+  const purchaseOrders = purchaseOrderData?.data ?? []
   const sites = useMemo(
     () => entities.filter((entity) => entity.entity_type === 'INTERNAL_SITE'),
     [entities],
@@ -126,8 +132,11 @@ function OperationsPage() {
       unit_rate: 0,
     },
   ])
-  const [stagedOrders, setStagedOrders] = useState<PurchaseOrderDraft[]>([])
   const [statusDrafts, setStatusDrafts] = useState<Record<string, POStatus>>({})
+  const [procurementFeedback, setProcurementFeedback] = useState<{
+    kind: 'success' | 'error'
+    message: string
+  } | null>(null)
 
   const [ledgerForm, setLedgerForm] = useState({
     site_id: searchParams.get('site') ?? '',
@@ -316,37 +325,93 @@ function OperationsPage() {
     ])
   }
 
-  const handleProcurementSave = () => {
-    const draft: PurchaseOrderDraft = {
-      id: crypto.randomUUID(),
-      po_number: procurementDraft.po_number,
-      vendor_id: procurementDraft.vendor_id,
-      target_site_id: procurementDraft.target_site_id,
-      status: procurementDraft.status,
-      expected_delivery_date: procurementDraft.expected_delivery_date,
-      items: lineItems.map((item) => ({
-        material_id: item.material_id,
-        ordered_quantity_base_uom: Number(item.ordered_quantity_base_uom),
-        unit_rate: Number(item.unit_rate),
-      })),
-    }
+  const invalidatePurchaseOrders = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: purchaseOrdersQueryKey(selectedTenantId) }),
+      queryClient.invalidateQueries({ queryKey: ['master-data', selectedTenantId] }),
+      queryClient.invalidateQueries({ queryKey: ['inventory-dashboard', selectedTenantId] }),
+      queryClient.invalidateQueries({ queryKey: ['site-materials', selectedTenantId] }),
+    ])
+  }
 
-    setStagedOrders((current) => [draft, ...current])
-    setProcurementDraft({
-      po_number: '',
-      vendor_id: '',
-      target_site_id: '',
-      status: 'DRAFT',
-      expected_delivery_date: '',
-    })
-    setLineItems([
-      {
+  const createPurchaseOrderMutation = useMutation({
+    mutationFn: () => createPurchaseOrder(selectedTenantId, {
+      poNumber: procurementDraft.po_number,
+      vendorId: procurementDraft.vendor_id,
+      targetSiteId: procurementDraft.target_site_id,
+      expectedDeliveryDate: procurementDraft.expected_delivery_date || null,
+      items: lineItems.map((item) => ({
+        materialId: item.material_id,
+        orderedQuantityBaseUom: Number(item.ordered_quantity_base_uom),
+        unitRate: Number(item.unit_rate),
+      })),
+    }),
+    onSuccess: async (purchaseOrder) => {
+      await invalidatePurchaseOrders()
+      setProcurementFeedback({
+        kind: 'success',
+        message: `${purchaseOrder.po_number} was saved as a draft.`,
+      })
+      setProcurementDraft({
+        po_number: '',
+        vendor_id: '',
+        target_site_id: '',
+        status: 'DRAFT',
+        expected_delivery_date: '',
+      })
+      setLineItems([{
         id: crypto.randomUUID(),
         material_id: '',
         ordered_quantity_base_uom: 1,
         unit_rate: 0,
-      },
-    ])
+      }])
+    },
+    onError: (error) => {
+      setProcurementFeedback({ kind: 'error', message: formatPurchaseOrderError(error) })
+    },
+  })
+
+  const updatePurchaseOrderStatusMutation = useMutation({
+    mutationFn: ({ purchaseOrderId, status }: { purchaseOrderId: string; status: POStatus }) =>
+      updatePurchaseOrderStatus(selectedTenantId, purchaseOrderId, status),
+    onSuccess: async (purchaseOrder) => {
+      await invalidatePurchaseOrders()
+      setStatusDrafts((current) => {
+        const next = { ...current }
+        delete next[purchaseOrder.id]
+        return next
+      })
+      setProcurementFeedback({
+        kind: 'success',
+        message: `${purchaseOrder.po_number} moved to ${purchaseOrder.status}.`,
+      })
+    },
+    onError: (error) => {
+      setProcurementFeedback({ kind: 'error', message: formatPurchaseOrderError(error) })
+    },
+  })
+
+  const handleProcurementSave = () => {
+    setProcurementFeedback(null)
+    if (!procurementDraft.po_number.trim() || !procurementDraft.vendor_id || !procurementDraft.target_site_id) {
+      setProcurementFeedback({
+        kind: 'error',
+        message: 'PO number, vendor, and target site are required.',
+      })
+      return
+    }
+    if (lineItems.some((item) => !item.material_id || Number(item.ordered_quantity_base_uom) <= 0 || Number(item.unit_rate) < 0)) {
+      setProcurementFeedback({
+        kind: 'error',
+        message: 'Every line needs a material, positive quantity, and non-negative unit rate.',
+      })
+      return
+    }
+    if (new Set(lineItems.map((item) => item.material_id)).size !== lineItems.length) {
+      setProcurementFeedback({ kind: 'error', message: 'Each material may appear only once per purchase order.' })
+      return
+    }
+    createPurchaseOrderMutation.mutate()
   }
 
   const handleBatchSync = async () => {
@@ -584,10 +649,19 @@ function OperationsPage() {
       {activeSection === 'procurement' ? (
         <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
           <div>
-            <h3 className="text-base font-semibold text-slate-900">Procurement Superset View</h3>
+            <h3 className="text-base font-semibold text-slate-900">Purchase Orders</h3>
             <p className="text-sm text-slate-600">
-              Stage purchase_orders with dynamic po_items and status management.
+              Create tenant purchase orders and advance them through their fulfillment lifecycle.
             </p>
+            {procurementFeedback ? (
+              <p className={`mt-2 rounded-md border px-3 py-2 text-sm ${
+                procurementFeedback.kind === 'success'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                  : 'border-red-200 bg-red-50 text-red-800'
+              }`}>
+                {procurementFeedback.message}
+              </p>
+            ) : null}
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
@@ -603,27 +677,12 @@ function OperationsPage() {
               />
             </label>
 
-            <label className="space-y-0.5 text-sm font-medium text-slate-700">
+            <div className="space-y-0.5 text-sm font-medium text-slate-700">
               <span>Status</span>
-              <select
-                value={procurementDraft.status}
-                onChange={(event) =>
-                  setProcurementDraft((current) => ({
-                    ...current,
-                    status: event.target.value as POStatus,
-                  }))
-                }
-                className="w-full rounded-md border border-slate-300 px-3 py-2"
-              >
-                {(['DRAFT', 'APPROVED', 'PARTIALLY_FULFILLED', 'COMPLETED'] as POStatus[]).map(
-                  (status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ),
-                )}
-              </select>
-            </label>
+              <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900">
+                DRAFT
+              </p>
+            </div>
 
             <label className="space-y-0.5 text-sm font-medium text-slate-700">
               <span>Vendor</span>
@@ -784,19 +843,19 @@ function OperationsPage() {
 
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-slate-500">
-              The draft is staged locally until a procurement write endpoint is available.
+              Materials must be actively assigned to the target site before this draft can be saved.
             </p>
             <button
               type="button"
               onClick={handleProcurementSave}
-              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+              disabled={createPurchaseOrderMutation.isPending}
+              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Stage Purchase Order Draft
+              {createPurchaseOrderMutation.isPending ? 'Saving...' : 'Save Draft'}
             </button>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="overflow-hidden rounded-lg border border-slate-200">
+          <div className="overflow-hidden rounded-lg border border-slate-200">
               <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900">
                 Active Orders
               </div>
@@ -805,6 +864,7 @@ function OperationsPage() {
                   <thead className="bg-slate-100">
                     <tr>
                       <th className="px-3 py-2 text-left">PO</th>
+                      <th className="px-3 py-2 text-left">Vendor / Site</th>
                       <th className="px-3 py-2 text-left">Status</th>
                       <th className="px-3 py-2 text-left">Status Update</th>
                     </tr>
@@ -813,63 +873,62 @@ function OperationsPage() {
                     {activeOrders.map((order) => (
                       <tr key={order.id}>
                         <td className="px-3 py-2 font-medium text-slate-900">{order.po_number}</td>
+                        <td className="px-3 py-2 text-slate-700">
+                          <p>{order.vendor_name}</p>
+                          <p className="text-xs text-slate-500">{order.target_site_name}</p>
+                        </td>
                         <td className="px-3 py-2 text-slate-700">{order.status}</td>
                         <td className="px-3 py-2">
-                          <select
-                            value={statusDrafts[order.id] ?? order.status}
-                            onChange={(event) =>
-                              setStatusDrafts((current) => ({
-                                ...current,
-                                [order.id]: event.target.value as POStatus,
-                              }))
-                            }
-                            className="w-full rounded-md border border-slate-300 px-2 py-1"
-                          >
-                            {(['DRAFT', 'APPROVED', 'PARTIALLY_FULFILLED', 'COMPLETED'] as POStatus[]).map(
-                              (status) => (
-                                <option key={status} value={status}>
-                                  {status}
-                                </option>
-                              ),
-                            )}
-                          </select>
+                          <div className="flex min-w-64 gap-2">
+                            <select
+                              value={statusDrafts[order.id] ?? order.status}
+                              onChange={(event) =>
+                                setStatusDrafts((current) => ({
+                                  ...current,
+                                  [order.id]: event.target.value as POStatus,
+                                }))
+                              }
+                              className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1"
+                            >
+                              {(order.status === 'DRAFT'
+                                ? ['DRAFT', 'APPROVED']
+                                : order.status === 'APPROVED'
+                                  ? ['APPROVED', 'PARTIALLY_FULFILLED', 'COMPLETED']
+                                  : ['PARTIALLY_FULFILLED', 'COMPLETED']
+                              ).map((status) => (
+                                <option key={status} value={status}>{status}</option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              disabled={
+                                updatePurchaseOrderStatusMutation.isPending ||
+                                (statusDrafts[order.id] ?? order.status) === order.status
+                              }
+                              onClick={() => updatePurchaseOrderStatusMutation.mutate({
+                                purchaseOrderId: order.id,
+                                status: statusDrafts[order.id] ?? order.status,
+                              })}
+                              className="rounded-md border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              Update
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
                     {activeOrders.length === 0 ? (
                       <tr>
-                        <td colSpan={3} className="px-3 py-4 text-center text-slate-600">
-                          No active orders found for the selected tenant.
+                        <td colSpan={4} className="px-3 py-4 text-center text-slate-600">
+                          {purchaseOrdersLoading
+                            ? 'Loading purchase orders...'
+                            : 'No active orders found for the selected tenant.'}
                         </td>
                       </tr>
                     ) : null}
                   </tbody>
                 </table>
               </div>
-            </div>
-
-            <div className="overflow-hidden rounded-lg border border-slate-200">
-              <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900">
-                Draft Preview
-              </div>
-              <div className="space-y-3 p-3 text-sm text-slate-700">
-                {stagedOrders.length === 0 ? (
-                  <p>No staged drafts yet.</p>
-                ) : (
-                  stagedOrders.map((draft) => (
-                    <div key={draft.id} className="rounded-md bg-slate-50 p-3">
-                      <p className="font-semibold text-slate-900">{draft.po_number}</p>
-                      <p>Status: {draft.status}</p>
-                      <p>Vendor: {draft.vendor_id || '—'}</p>
-                      <p>Site: {draft.target_site_id || '—'}</p>
-                      <p className="mt-2 text-xs text-slate-500">
-                        Items: {draft.items?.length ?? 0}
-                      </p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
           </div>
 
           <div className="overflow-hidden rounded-lg border border-slate-200">

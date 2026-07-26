@@ -21,3 +21,7 @@ export function entitiesQueryKey(tenantId: string, filters?: object) {
 export function entitySitesQueryKey(tenantId: string, entityId: string) {
   return ['entity-sites', tenantId, entityId] as const
 }
+
+export function purchaseOrdersQueryKey(tenantId: string) {
+  return ['purchase-orders', tenantId] as const
+}

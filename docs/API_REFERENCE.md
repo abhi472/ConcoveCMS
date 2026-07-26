@@ -57,6 +57,23 @@ Profile fields are validated by entity type. Employees and subcontractors use `A
 
 Unassignment is lifecycle-based and returns structured HTTP 409 blockers for non-zero stock or open purchase orders. New transaction writes require an active assignment.
 
+### Purchase Orders
+
+**Endpoints:**
+- `GET /api/v1/purchase-orders?tenant_id&search&status&page&page_size`
+- `POST /api/v1/purchase-orders`
+- `GET /api/v1/purchase-orders/{purchase_order_id}?tenant_id`
+- `PATCH /api/v1/purchase-orders/{purchase_order_id}/status`
+
+Creation atomically persists a DRAFT purchase order and its line items. The vendor and target site must be active entities in the tenant, every material must be active and assigned to the target site, quantities must be positive, rates must be non-negative, and a material may appear only once per order.
+
+Status changes are forward-only:
+- `DRAFT` -> `APPROVED`
+- `APPROVED` -> `PARTIALLY_FULFILLED` or `COMPLETED`
+- `PARTIALLY_FULFILLED` -> `COMPLETED`
+
+Repeated writes of the current status are accepted. Backward transitions return HTTP 409 with code `INVALID_PO_STATUS_TRANSITION`.
+
 ### Inventory Dashboard (Read-Only)
 
 **Endpoint:** `GET /api/v1/inventory/dashboard`
@@ -177,7 +194,7 @@ Individual records in the batch may succeed or fail. Check `results` array for p
 
 ## Frontend Implementation Notes
 
-- Use resource-specific `materialsQueryKey`, `entitiesQueryKey`, `entitySitesQueryKey`, and `siteMaterialsQueryKey` keys for managed catalogs. Retain `masterDataQueryKey` for bootstrap consumers.
+- Use resource-specific `materialsQueryKey`, `entitiesQueryKey`, `entitySitesQueryKey`, `siteMaterialsQueryKey`, and `purchaseOrdersQueryKey` keys for managed resources. Retain `masterDataQueryKey` for bootstrap consumers.
 - Persist failed 207 records in `SyncRetryContext` for retry workflows
 - Store successful transactions in sync history for correction draft creation
 - Display tenant-mismatch errors to operator immediately

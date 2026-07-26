@@ -53,7 +53,9 @@ export interface PurchaseOrder {
   vendor_id: string
   target_site_id: string
   status: POStatus
-  expected_delivery_date: string
+  expected_delivery_date: string | null
+  vendor_name?: string
+  target_site_name?: string
   items?: POItem[]
   created_at?: string
   updated_at?: string
