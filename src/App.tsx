@@ -5,6 +5,7 @@ import EntitiesPage from './pages/EntitiesPage'
 import MaterialsPage from './pages/MaterialsPage'
 import OperationsPage from './pages/OperationsPage'
 import SyncMonitorPage from './pages/SyncMonitorPage'
+import SiteMaterialsPage from './pages/SiteMaterialsPage'
 
 function App() {
   return (
@@ -12,6 +13,7 @@ function App() {
       <Route path="/" element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="materials" element={<MaterialsPage />} />
+        <Route path="site-materials" element={<SiteMaterialsPage />} />
         <Route path="entities" element={<EntitiesPage />} />
         <Route path="operations" element={<OperationsPage />} />
         <Route path="sync-monitor" element={<SyncMonitorPage />} />

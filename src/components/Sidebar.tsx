@@ -40,6 +40,18 @@ function Sidebar() {
           Materials
         </NavLink>
         <NavLink
+          to="/site-materials"
+          className={({ isActive }) =>
+            `${baseLinkStyles} ${
+              isActive
+                ? 'bg-amber-500 text-slate-900 font-semibold shadow-sm'
+                : 'text-slate-200 hover:bg-slate-700 hover:text-white'
+            }`
+          }
+        >
+          Site Materials
+        </NavLink>
+        <NavLink
           to="/entities"
           className={({ isActive }) =>
             `${baseLinkStyles} ${

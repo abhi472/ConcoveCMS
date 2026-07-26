@@ -5,3 +5,7 @@ export function masterDataQueryKey(tenantId: string, lastSyncedAt?: string) {
 export function inventoryDashboardQueryKey(tenantId: string, siteId?: string) {
   return ['inventory-dashboard', tenantId, siteId || 'all-sites'] as const
 }
+
+export function siteMaterialsQueryKey(tenantId: string, siteId?: string) {
+  return ['site-materials', tenantId, siteId || 'all-sites'] as const
+}
