@@ -201,13 +201,14 @@ function OperationsPage() {
       }
 
       const transaction = historyRecord.transaction
+      const correctionTransactionType = getCompensatingTransactionType(transaction.transaction_type)
       setCurrentTransactionId(crypto.randomUUID())
       setSubmissionContext('correction')
       setLedgerForm({
         site_id: transaction.site_id,
         material_id: transaction.material_id,
-        po_id: transaction.po_id ?? '',
-        transaction_type: getCompensatingTransactionType(transaction.transaction_type),
+        po_id: correctionTransactionType === 'INWARD' ? transaction.po_id ?? '' : '',
+        transaction_type: correctionTransactionType,
         quantity: String(transaction.quantity),
         source_entity_id: transaction.destination_entity_id ?? '',
         destination_entity_id: transaction.source_entity_id ?? '',
@@ -293,6 +294,10 @@ function OperationsPage() {
   }, [getFailedRecord, getSyncHistoryRecord, searchParams, setSearchParams])
 
   const activeOrders = purchaseOrders.filter((order) => order.status !== 'COMPLETED')
+  const receivableOrders = purchaseOrders.filter((order) =>
+    (order.status === 'APPROVED' || order.status === 'PARTIALLY_FULFILLED') &&
+    (!ledgerForm.site_id || order.target_site_id === ledgerForm.site_id),
+  )
 
   const procurementPreview = lineItems.map((item) => ({
     ...item,
@@ -865,6 +870,7 @@ function OperationsPage() {
                     <tr>
                       <th className="px-3 py-2 text-left">PO</th>
                       <th className="px-3 py-2 text-left">Vendor / Site</th>
+                      <th className="px-3 py-2 text-left">Fulfillment</th>
                       <th className="px-3 py-2 text-left">Status</th>
                       <th className="px-3 py-2 text-left">Status Update</th>
                     </tr>
@@ -876,6 +882,31 @@ function OperationsPage() {
                         <td className="px-3 py-2 text-slate-700">
                           <p>{order.vendor_name}</p>
                           <p className="text-xs text-slate-500">{order.target_site_name}</p>
+                        </td>
+                        <td className="px-3 py-2 text-slate-700">
+                          <div className="w-40">
+                            <div className="mb-1 flex justify-between gap-2 text-xs">
+                              <span>{Number(order.received_quantity_base_uom).toLocaleString()} received</span>
+                              <span>{Number(order.open_quantity_base_uom).toLocaleString()} open</span>
+                            </div>
+                            <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
+                              <div
+                                className="h-full bg-emerald-600"
+                                style={{
+                                  width: `${Math.min(
+                                    100,
+                                    Number(order.ordered_quantity_base_uom) > 0
+                                      ? (Number(order.received_quantity_base_uom) /
+                                          Number(order.ordered_quantity_base_uom)) * 100
+                                      : 0,
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {Number(order.ordered_quantity_base_uom).toLocaleString()} ordered across {order.line_count} line{order.line_count === 1 ? '' : 's'}
+                            </p>
+                          </div>
                         </td>
                         <td className="px-3 py-2 text-slate-700">{order.status}</td>
                         <td className="px-3 py-2">
@@ -919,7 +950,7 @@ function OperationsPage() {
                     ))}
                     {activeOrders.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="px-3 py-4 text-center text-slate-600">
+                        <td colSpan={5} className="px-3 py-4 text-center text-slate-600">
                           {purchaseOrdersLoading
                             ? 'Loading purchase orders...'
                             : 'No active orders found for the selected tenant.'}
@@ -1030,6 +1061,7 @@ function OperationsPage() {
                   setLedgerForm((current) => ({
                     ...current,
                     transaction_type: event.target.value as TransactionType,
+                    po_id: event.target.value === 'INWARD' ? current.po_id : '',
                   }))
                 }
                 className="w-full rounded-md border border-slate-300 px-3 py-2"
@@ -1056,13 +1088,28 @@ function OperationsPage() {
             </label>
 
             <label className="space-y-0.5 text-sm font-medium text-slate-700">
-              <span>PO ID</span>
-              <input
+              <span>Purchase Order</span>
+              <select
                 value={ledgerForm.po_id}
-                onChange={(event) => setLedgerForm((current) => ({ ...current, po_id: event.target.value }))}
+                disabled={ledgerForm.transaction_type !== 'INWARD'}
+                onChange={(event) => {
+                  const purchaseOrder = receivableOrders.find((order) => order.id === event.target.value)
+                  setLedgerForm((current) => ({
+                    ...current,
+                    po_id: event.target.value,
+                    site_id: purchaseOrder?.target_site_id ?? current.site_id,
+                    source_entity_id: purchaseOrder?.vendor_id ?? current.source_entity_id,
+                  }))
+                }}
                 className="w-full rounded-md border border-slate-300 px-3 py-2"
-                placeholder="Optional"
-              />
+              >
+                <option value="">No purchase order</option>
+                {receivableOrders.map((order) => (
+                  <option key={order.id} value={order.id}>
+                    {order.po_number} · {Number(order.open_quantity_base_uom).toLocaleString()} open
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label className="space-y-0.5 text-sm font-medium text-slate-700">

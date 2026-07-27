@@ -193,11 +193,11 @@ Implemented now:
 - Managed entity catalogs with type-specific profiles, archive/restore, multi-site people assignments, and vendor preferences
 - Backend enforcement that archived or unassigned master data cannot be used for new inventory writes
 - Persisted purchase-order drafts with atomic line creation, assignment enforcement, tenant-scoped listing, and forward-only status updates
+- Ledger-derived PO fulfillment totals, constrained receipt selection, concurrency-safe open-quantity enforcement, and automatic partial/completed status updates
 
 Planned next:
 - add automated unit/integration tests for tenant and 207 behaviors
 - formalize backend correction metadata handling and lineage display
-- derive PO fulfillment status from authoritative receipt quantities
 
 Deployment order for the schema-dependent catalog phase:
 1. Apply backend `V5__entity_management_and_audit.sql` to a non-production database and then production.

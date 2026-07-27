@@ -5,11 +5,17 @@ import type { POItem, POStatus, PurchaseOrder } from '../types/schema'
 export interface ManagedPurchaseOrder extends PurchaseOrder {
   vendor_name: string
   target_site_name: string
+  line_count: number
+  ordered_quantity_base_uom: number
+  received_quantity_base_uom: number
+  open_quantity_base_uom: number
   created_at: string
   updated_at: string
   items?: Array<POItem & {
     id: string
     material_code: string
+    received_quantity_base_uom: number
+    open_quantity_base_uom: number
     created_at: string
     updated_at: string
   }>

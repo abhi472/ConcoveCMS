@@ -67,12 +67,16 @@ Unassignment is lifecycle-based and returns structured HTTP 409 blockers for non
 
 Creation atomically persists a DRAFT purchase order and its line items. The vendor and target site must be active entities in the tenant, every material must be active and assigned to the target site, quantities must be positive, rates must be non-negative, and a material may appear only once per order.
 
+List responses include `line_count`, `ordered_quantity_base_uom`, `received_quantity_base_uom`, and `open_quantity_base_uom`. Detail responses include received and open quantities per line. These values are calculated from immutable INWARD ledger entries rather than stored counters.
+
 Status changes are forward-only:
 - `DRAFT` -> `APPROVED`
 - `APPROVED` -> `PARTIALLY_FULFILLED` or `COMPLETED`
 - `PARTIALLY_FULFILLED` -> `COMPLETED`
 
 Repeated writes of the current status are accepted. Backward transitions return HTTP 409 with code `INVALID_PO_STATUS_TRANSITION`.
+
+PO-linked INWARD transactions lock the order while validating that it is APPROVED or PARTIALLY_FULFILLED, targets the transaction site, contains the material, uses the PO vendor as source, and has enough open quantity. A successful receipt automatically derives PARTIALLY_FULFILLED or COMPLETED status in the same database transaction. General INWARD entries may omit `po_id`.
 
 ### Inventory Dashboard (Read-Only)
 
@@ -160,6 +164,7 @@ Repeated writes of the current status are accepted. Backward transitions return 
 - Transaction types: INWARD, OUTWARD, IST_DISPATCH, IST_RECEIPT
 - Sites, materials, source entities, and destination entities must be active.
 - The material must be actively assigned to the transaction site.
+- When `po_id` is supplied, the transaction must be an INWARD receipt matching the PO site, vendor, material line, lifecycle status, and remaining open quantity.
 
 ### Fluid Dispense (Rapid Write)
 
