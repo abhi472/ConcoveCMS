@@ -20,7 +20,7 @@ import {
   type ManagedEntity,
 } from '../api/entitiesService'
 import { auditEventsQueryKey, entitiesQueryKey, entitySitesQueryKey, inventoryBalancesQueryKey, purchaseOrdersQueryKey, siteMaterialsQueryKey, transactionsQueryKey } from '../api/queryKeys'
-import { useTenantContext } from '../context/TenantContext'
+import { useTenantContext } from '../context/useTenantContext'
 import type { EntityType } from '../types/schema'
 
 const entityTypes: Array<{ value: EntityType; label: string }> = [

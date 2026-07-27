@@ -5,7 +5,7 @@ import { formatApiError } from '../api/errorUtils'
 import { fetchInventoryDashboard } from '../api/inventoryService'
 import { fetchMasterData } from '../api/masterDataService'
 import { inventoryDashboardQueryKey, masterDataQueryKey } from '../api/queryKeys'
-import { useTenantContext } from '../context/TenantContext'
+import { useTenantContext } from '../context/useTenantContext'
 import type { InventoryBalance, InventoryStatus } from '../types/inventory'
 
 const statusStyles: Record<InventoryStatus, string> = {

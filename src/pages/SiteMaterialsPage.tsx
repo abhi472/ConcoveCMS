@@ -11,7 +11,7 @@ import {
   saveSiteMaterialAssignment,
   type SiteMaterialAssignment,
 } from '../api/siteMaterialService'
-import { useTenantContext } from '../context/TenantContext'
+import { useTenantContext } from '../context/useTenantContext'
 
 type SaveInput = {
   assignment: SiteMaterialAssignment

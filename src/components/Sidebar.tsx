@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { useTenantContext } from '../context/TenantContext'
+import { useTenantContext } from '../context/useTenantContext'
 
 function Sidebar() {
   const { selectedTenantId, selectedTenantName } = useTenantContext()

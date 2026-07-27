@@ -1,40 +1,13 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { SyncStatus } from '../api/syncContracts'
-import type { InventoryTransaction } from '../types/schema'
+import {
+  SyncRetryContext,
+  type FailedSyncRecord,
+  type SyncHistoryRecord,
+} from './useSyncRetryContext'
 
 const FAILED_SYNC_RECORDS_STORAGE_KEY = 'concovecms.failed-sync-records'
 const SYNC_HISTORY_STORAGE_KEY = 'concovecms.sync-history'
-
-export interface FailedSyncRecord {
-  client_transaction_id: string
-  message: string
-  tenant_id: string
-  failed_at: string
-  transaction: InventoryTransaction
-}
-
-export interface SyncHistoryRecord {
-  client_transaction_id: string
-  message: string
-  tenant_id: string
-  recorded_at: string
-  sync_status: SyncStatus
-  transaction: InventoryTransaction
-}
-
-interface SyncRetryContextValue {
-  failedRecords: FailedSyncRecord[]
-  syncHistory: SyncHistoryRecord[]
-  upsertFailedRecords: (records: FailedSyncRecord[]) => void
-  upsertSyncHistory: (records: SyncHistoryRecord[]) => void
-  removeFailedRecord: (clientTransactionId: string) => void
-  clearTenantSyncData: (tenantId: string) => void
-  getFailedRecord: (clientTransactionId: string) => FailedSyncRecord | undefined
-  getSyncHistoryRecord: (clientTransactionId: string) => SyncHistoryRecord | undefined
-}
-
-const SyncRetryContext = createContext<SyncRetryContextValue | undefined>(undefined)
 
 function loadFailedRecords() {
   if (typeof window === 'undefined') {
@@ -186,16 +159,6 @@ function SyncRetryProvider({ children }: { children: ReactNode }) {
   )
 
   return <SyncRetryContext.Provider value={value}>{children}</SyncRetryContext.Provider>
-}
-
-export function useSyncRetryContext() {
-  const context = useContext(SyncRetryContext)
-
-  if (!context) {
-    throw new Error('useSyncRetryContext must be used within a SyncRetryProvider')
-  }
-
-  return context
 }
 
 export default SyncRetryProvider

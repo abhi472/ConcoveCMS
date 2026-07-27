@@ -14,8 +14,8 @@ import {
 import {
   useSyncRetryContext,
   type SyncHistoryRecord,
-} from '../context/SyncRetryContext'
-import { useTenantContext } from '../context/TenantContext'
+} from '../context/useSyncRetryContext'
+import { useTenantContext } from '../context/useTenantContext'
 import type { TransactionType } from '../types/schema'
 
 interface CorrectionGroup {
@@ -596,7 +596,7 @@ function SyncMonitorPage() {
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Local Correction Draft History</h3>
         <p className="mt-2 text-sm text-slate-600">
-          Correction lineage remains local until the backend correction-audit migration is available. Successful ledger rows above are server-authoritative.
+          Correction lineage is persisted by the backend. This browser history groups locally prepared correction drafts; successful ledger rows above remain server-authoritative.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           {(['ALL', 'ORIGINAL', 'CORRECTION'] as const).map((filterValue) => (

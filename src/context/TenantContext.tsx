@@ -1,6 +1,4 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -14,15 +12,7 @@ import {
   getTenantNameById,
   setCurrentTenantId,
 } from '../config/tenant'
-
-interface TenantContextValue {
-  selectedTenantId: string
-  selectedTenantName: string
-  availableTenants: { id: string; name: string }[]
-  setSelectedTenantId: (tenantId: string) => void
-}
-
-const TenantContext = createContext<TenantContextValue | null>(null)
+import { TenantContext } from './useTenantContext'
 
 function TenantProvider({ children }: PropsWithChildren) {
   const queryClient = useQueryClient()
@@ -73,16 +63,6 @@ function TenantProvider({ children }: PropsWithChildren) {
   }
 
   return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>
-}
-
-export function useTenantContext() {
-  const context = useContext(TenantContext)
-
-  if (!context) {
-    throw new Error('useTenantContext must be used within TenantProvider')
-  }
-
-  return context
 }
 
 export default TenantProvider

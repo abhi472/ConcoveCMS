@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { formatApiError } from '../api/errorUtils'
 import { entitiesQueryKey, inventoryBalancesQueryKey, masterDataQueryKey, purchaseOrdersQueryKey } from '../api/queryKeys'
 import { fetchInventoryBalances } from '../api/inventoryService'
@@ -23,8 +23,8 @@ import type {
   BatchSyncResponse,
   FluidDispenseResponse,
 } from '../api/syncContracts'
-import { useSyncRetryContext } from '../context/SyncRetryContext'
-import { useTenantContext } from '../context/TenantContext'
+import { useSyncRetryContext } from '../context/useSyncRetryContext'
+import { useTenantContext } from '../context/useTenantContext'
 import type {
   InventoryTransaction,
   POItem,
@@ -41,6 +41,30 @@ type SubmissionContext = 'standard' | 'retry' | 'correction'
 interface OperationNotice {
   tone: 'info' | 'success' | 'warning'
   message: string
+}
+
+interface LedgerForm {
+  site_id: string
+  material_id: string
+  po_id: string
+  transaction_type: TransactionType
+  quantity: string
+  source_entity_id: string
+  destination_entity_id: string
+  transaction_date: string
+  includeCommercial: boolean
+  includeVolumetric: boolean
+  invoice_no: string
+  base_rate: string
+  gst_tier: string
+  transport_charges: string
+  length: string
+  breadth: string
+  height: string
+  loaded_weight: string
+  empty_weight: string
+  correction_of_transaction_id: string
+  correction_reason: string
 }
 
 const PROCUREMENT_DRAFT_VERSION = 1
@@ -102,6 +126,73 @@ function getRequestedTransactionType(value: string | null): TransactionType {
   return 'INWARD'
 }
 
+function createEmptyLedgerForm(searchParams: URLSearchParams): LedgerForm {
+  return {
+    site_id: searchParams.get('site') ?? '',
+    material_id: searchParams.get('material') ?? '',
+    po_id: '',
+    transaction_type: getRequestedTransactionType(searchParams.get('type')),
+    quantity: '',
+    source_entity_id: '',
+    destination_entity_id: '',
+    transaction_date: new Date().toISOString(),
+    includeCommercial: false,
+    includeVolumetric: false,
+    invoice_no: '',
+    base_rate: '',
+    gst_tier: '',
+    transport_charges: '',
+    length: '',
+    breadth: '',
+    height: '',
+    loaded_weight: '',
+    empty_weight: '',
+    correction_of_transaction_id: '',
+    correction_reason: '',
+  }
+}
+
+function createLedgerFormFromTransaction(
+  transaction: InventoryTransaction,
+  context: Exclude<SubmissionContext, 'standard'>,
+): LedgerForm {
+  const transactionType = context === 'correction'
+    ? getCompensatingTransactionType(transaction.transaction_type)
+    : transaction.transaction_type
+
+  return {
+    site_id: transaction.site_id,
+    material_id: transaction.material_id,
+    po_id: transactionType === 'INWARD' ? transaction.po_id ?? '' : '',
+    transaction_type: transactionType,
+    quantity: String(transaction.quantity),
+    source_entity_id: context === 'correction'
+      ? transaction.destination_entity_id ?? ''
+      : transaction.source_entity_id ?? '',
+    destination_entity_id: context === 'correction'
+      ? transaction.source_entity_id ?? ''
+      : transaction.destination_entity_id ?? '',
+    transaction_date: context === 'correction'
+      ? new Date().toISOString()
+      : transaction.transaction_date,
+    includeCommercial: Boolean(transaction.commercial_details),
+    includeVolumetric: Boolean(transaction.volumetric_details),
+    invoice_no: transaction.commercial_details?.invoice_no ?? '',
+    base_rate: String(transaction.commercial_details?.base_rate ?? ''),
+    gst_tier: String(transaction.commercial_details?.gst_tier ?? ''),
+    transport_charges: String(transaction.commercial_details?.transport_charges ?? ''),
+    length: String(transaction.volumetric_details?.length ?? ''),
+    breadth: String(transaction.volumetric_details?.breadth ?? ''),
+    height: String(transaction.volumetric_details?.height ?? ''),
+    loaded_weight: String(transaction.volumetric_details?.loaded_weight ?? ''),
+    empty_weight: String(transaction.volumetric_details?.empty_weight ?? ''),
+    correction_of_transaction_id: context === 'correction'
+      ? transaction.client_transaction_id
+      : transaction.correction_of_transaction_id ?? '',
+    correction_reason: context === 'correction' ? '' : transaction.correction_reason ?? '',
+  }
+}
+
 function OperationsPage() {
   const { selectedTenantId, selectedTenantName } = useTenantContext()
   const queryClient = useQueryClient()
@@ -113,7 +204,27 @@ function OperationsPage() {
     upsertSyncHistory,
   } = useSyncRetryContext()
   const [searchParams, setSearchParams] = useSearchParams()
-  const navigate = useNavigate()
+  const [initialLedgerRequest] = useState(() => {
+    const correctionId = searchParams.get('correction')
+    if (correctionId) {
+      return {
+        context: 'correction' as const,
+        sourceId: correctionId,
+        transaction: getSyncHistoryRecord(correctionId)?.transaction,
+      }
+    }
+
+    const retryId = searchParams.get('retry')
+    if (retryId) {
+      return {
+        context: 'retry' as const,
+        sourceId: retryId,
+        transaction: getFailedRecord(retryId)?.transaction,
+      }
+    }
+
+    return null
+  })
   const { data } = useQuery({
     queryKey: masterDataQueryKey(selectedTenantId),
     queryFn: () => fetchMasterData({ tenantId: selectedTenantId }),
@@ -124,7 +235,7 @@ function OperationsPage() {
   })
 
   const materials = data?.data.materials ?? []
-  const entities = data?.data.entities ?? []
+  const entities = useMemo(() => data?.data.entities ?? [], [data])
   const purchaseOrders = purchaseOrderData?.data ?? []
   const sites = useMemo(
     () => entities.filter((entity) => entity.entity_type === 'INTERNAL_SITE'),
@@ -140,7 +251,9 @@ function OperationsPage() {
   )
 
   const [activeSection, setActiveSection] = useState<'procurement' | 'ledger' | 'sync'>(() =>
-    searchParams.get('mode') === 'ledger' ? 'ledger' : 'procurement',
+    searchParams.get('mode') === 'ledger' || initialLedgerRequest
+      ? 'ledger'
+      : 'procurement',
   )
 
   const [procurementRecovery] = useState(() => loadProcurementRecovery(selectedTenantId))
@@ -186,29 +299,11 @@ function OperationsPage() {
     }))
   }, [editingPurchaseOrderId, lineItems, procurementDraft, selectedTenantId])
 
-  const [ledgerForm, setLedgerForm] = useState({
-    site_id: searchParams.get('site') ?? '',
-    material_id: searchParams.get('material') ?? '',
-    po_id: '',
-    transaction_type: getRequestedTransactionType(searchParams.get('type')),
-    quantity: '',
-    source_entity_id: '',
-    destination_entity_id: '',
-    transaction_date: new Date().toISOString(),
-    includeCommercial: false,
-    includeVolumetric: false,
-    invoice_no: '',
-    base_rate: '',
-    gst_tier: '',
-    transport_charges: '',
-    length: '',
-    breadth: '',
-    height: '',
-    loaded_weight: '',
-    empty_weight: '',
-    correction_of_transaction_id: '',
-    correction_reason: '',
-  })
+  const [ledgerForm, setLedgerForm] = useState<LedgerForm>(() =>
+    initialLedgerRequest?.transaction
+      ? createLedgerFormFromTransaction(initialLedgerRequest.transaction, initialLedgerRequest.context)
+      : createEmptyLedgerForm(searchParams),
+  )
   const balanceQuery = useQuery({
     queryKey: inventoryBalancesQueryKey(selectedTenantId, ledgerForm.site_id, ledgerForm.material_id),
     queryFn: () => fetchInventoryBalances({
@@ -239,10 +334,25 @@ function OperationsPage() {
   const [fluidResult, setFluidResult] = useState<FluidDispenseResponse | null>(null)
   const [batchError, setBatchError] = useState('')
   const [fluidError, setFluidError] = useState('')
-  const [ledgerError, setLedgerError] = useState('')
+  const [ledgerError, setLedgerError] = useState(() => {
+    if (!initialLedgerRequest || initialLedgerRequest.transaction) {
+      return ''
+    }
+
+    return initialLedgerRequest.context === 'correction'
+      ? 'Correction source record was not found in sync history.'
+      : 'Retry record was not found in Sync Monitor history.'
+  })
   const [operationNotice, setOperationNotice] = useState<OperationNotice | null>(() =>
-    searchParams.get('mode') === 'ledger' &&
-    (searchParams.has('site') || searchParams.has('material'))
+    initialLedgerRequest?.transaction
+      ? {
+          tone: 'info',
+          message: initialLedgerRequest.context === 'correction'
+            ? `Loaded correction draft for ${initialLedgerRequest.sourceId}. Submit a compensating entry after reviewing the payload.`
+            : `Loaded retry payload for ${initialLedgerRequest.sourceId}. Review the data and resubmit when ready.`,
+        }
+      : searchParams.get('mode') === 'ledger' &&
+        (searchParams.has('site') || searchParams.has('material'))
       ? {
           tone: 'info',
           message: 'Loaded site and material context from the inventory dashboard. Review the entry before submitting.',
@@ -251,121 +361,25 @@ function OperationsPage() {
   )
   const [isSubmittingBatch, setIsSubmittingBatch] = useState(false)
   const [isSubmittingFluid, setIsSubmittingFluid] = useState(false)
-  const [submissionContext, setSubmissionContext] = useState<SubmissionContext>('standard')
+  const [submissionContext, setSubmissionContext] = useState<SubmissionContext>(
+    initialLedgerRequest?.transaction ? initialLedgerRequest.context : 'standard',
+  )
   const [currentTransactionId, setCurrentTransactionId] = useState<string>(
-    crypto.randomUUID(),
+    initialLedgerRequest?.context === 'retry' && initialLedgerRequest.transaction
+      ? initialLedgerRequest.transaction.client_transaction_id
+      : crypto.randomUUID(),
   )
 
   useEffect(() => {
-    const retryId = searchParams.get('retry')
-    const correctionId = searchParams.get('correction')
-
-    if (correctionId) {
-      const historyRecord = getSyncHistoryRecord(correctionId)
-
-      setActiveSection('ledger')
-
-      if (!historyRecord) {
-        setLedgerError('Correction source record was not found in sync history.')
-
-        const nextParams = new URLSearchParams(searchParams)
-        nextParams.delete('correction')
-        setSearchParams(nextParams, { replace: true })
-        return
-      }
-
-      const transaction = historyRecord.transaction
-      const correctionTransactionType = getCompensatingTransactionType(transaction.transaction_type)
-      setCurrentTransactionId(crypto.randomUUID())
-      setSubmissionContext('correction')
-      setLedgerForm({
-        site_id: transaction.site_id,
-        material_id: transaction.material_id,
-        po_id: correctionTransactionType === 'INWARD' ? transaction.po_id ?? '' : '',
-        transaction_type: correctionTransactionType,
-        quantity: String(transaction.quantity),
-        source_entity_id: transaction.destination_entity_id ?? '',
-        destination_entity_id: transaction.source_entity_id ?? '',
-        transaction_date: new Date().toISOString(),
-        includeCommercial: Boolean(transaction.commercial_details),
-        includeVolumetric: Boolean(transaction.volumetric_details),
-        invoice_no: transaction.commercial_details?.invoice_no ?? '',
-        base_rate: String(transaction.commercial_details?.base_rate ?? ''),
-        gst_tier: String(transaction.commercial_details?.gst_tier ?? ''),
-        transport_charges: String(transaction.commercial_details?.transport_charges ?? ''),
-        length: String(transaction.volumetric_details?.length ?? ''),
-        breadth: String(transaction.volumetric_details?.breadth ?? ''),
-        height: String(transaction.volumetric_details?.height ?? ''),
-        loaded_weight: String(transaction.volumetric_details?.loaded_weight ?? ''),
-        empty_weight: String(transaction.volumetric_details?.empty_weight ?? ''),
-        correction_of_transaction_id: transaction.client_transaction_id,
-        correction_reason: '',
-      })
-      setOperationNotice({
-        tone: 'info',
-        message: `Loaded correction draft for ${transaction.client_transaction_id}. Submit a compensating entry after reviewing the payload.`,
-      })
-      setLedgerError('')
-
-      const nextParams = new URLSearchParams(searchParams)
-      nextParams.delete('correction')
-      setSearchParams(nextParams, { replace: true })
+    if (!searchParams.has('retry') && !searchParams.has('correction')) {
       return
     }
-
-    if (!retryId) {
-      return
-    }
-
-    const retryRecord = getFailedRecord(retryId)
-
-    if (!retryRecord) {
-      setLedgerError('Retry record was not found in Sync Monitor history.')
-      setActiveSection('ledger')
-
-      const nextParams = new URLSearchParams(searchParams)
-      nextParams.delete('retry')
-      setSearchParams(nextParams, { replace: true })
-      return
-    }
-
-    const transaction = retryRecord.transaction
-    setActiveSection('ledger')
-    setSubmissionContext('retry')
-    setCurrentTransactionId(transaction.client_transaction_id)
-    setLedgerForm({
-      site_id: transaction.site_id,
-      material_id: transaction.material_id,
-      po_id: transaction.po_id ?? '',
-      transaction_type: transaction.transaction_type,
-      quantity: String(transaction.quantity),
-      source_entity_id: transaction.source_entity_id ?? '',
-      destination_entity_id: transaction.destination_entity_id ?? '',
-      transaction_date: transaction.transaction_date,
-      includeCommercial: Boolean(transaction.commercial_details),
-      includeVolumetric: Boolean(transaction.volumetric_details),
-      invoice_no: transaction.commercial_details?.invoice_no ?? '',
-      base_rate: String(transaction.commercial_details?.base_rate ?? ''),
-      gst_tier: String(transaction.commercial_details?.gst_tier ?? ''),
-      transport_charges: String(transaction.commercial_details?.transport_charges ?? ''),
-      length: String(transaction.volumetric_details?.length ?? ''),
-      breadth: String(transaction.volumetric_details?.breadth ?? ''),
-      height: String(transaction.volumetric_details?.height ?? ''),
-      loaded_weight: String(transaction.volumetric_details?.loaded_weight ?? ''),
-      empty_weight: String(transaction.volumetric_details?.empty_weight ?? ''),
-      correction_of_transaction_id: transaction.correction_of_transaction_id ?? '',
-      correction_reason: transaction.correction_reason ?? '',
-    })
-    setOperationNotice({
-      tone: 'info',
-      message: `Loaded retry payload for ${retryRecord.client_transaction_id}. Review the data and resubmit when ready.`,
-    })
-    setLedgerError('')
 
     const nextParams = new URLSearchParams(searchParams)
     nextParams.delete('retry')
+    nextParams.delete('correction')
     setSearchParams(nextParams, { replace: true })
-  }, [getFailedRecord, getSyncHistoryRecord, searchParams, setSearchParams])
+  }, [searchParams, setSearchParams])
 
   const activeOrders = purchaseOrders.filter((order) => order.status !== 'COMPLETED')
   const receivableOrders = purchaseOrders.filter((order) =>
@@ -391,6 +405,44 @@ function OperationsPage() {
 
     return operationalNonSiteEntities
   }, [ledgerForm.transaction_type, operationalNonSiteEntities, operationalVendors])
+
+  const loadCorrectionDraft = (clientTransactionId: string) => {
+    const historyRecord = getSyncHistoryRecord(clientTransactionId)
+    setActiveSection('ledger')
+
+    if (!historyRecord) {
+      setLedgerError('Correction source record was not found in sync history.')
+      return
+    }
+
+    setCurrentTransactionId(crypto.randomUUID())
+    setSubmissionContext('correction')
+    setLedgerForm(createLedgerFormFromTransaction(historyRecord.transaction, 'correction'))
+    setOperationNotice({
+      tone: 'info',
+      message: `Loaded correction draft for ${clientTransactionId}. Submit a compensating entry after reviewing the payload.`,
+    })
+    setLedgerError('')
+  }
+
+  const loadRetryDraft = (clientTransactionId: string) => {
+    const retryRecord = getFailedRecord(clientTransactionId)
+    setActiveSection('ledger')
+
+    if (!retryRecord) {
+      setLedgerError('Retry record was not found in Sync Monitor history.')
+      return
+    }
+
+    setCurrentTransactionId(retryRecord.transaction.client_transaction_id)
+    setSubmissionContext('retry')
+    setLedgerForm(createLedgerFormFromTransaction(retryRecord.transaction, 'retry'))
+    setOperationNotice({
+      tone: 'info',
+      message: `Loaded retry payload for ${clientTransactionId}. Review the data and resubmit when ready.`,
+    })
+    setLedgerError('')
+  }
 
   const handleAddLineItem = () => {
     setLineItems((current) => [
@@ -1510,7 +1562,7 @@ function OperationsPage() {
                             {row.sync_status === 'SUCCESS' ? (
                               <button
                                 type="button"
-                                onClick={() => navigate(`/operations?correction=${row.client_transaction_id}`)}
+                                onClick={() => loadCorrectionDraft(row.client_transaction_id)}
                                 className="mt-2 rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700"
                               >
                                 Correction
@@ -1524,7 +1576,7 @@ function OperationsPage() {
                             {row.sync_status === 'FAILED' ? (
                               <button
                                 type="button"
-                                onClick={() => navigate(`/operations?retry=${row.client_transaction_id}`)}
+                                onClick={() => loadRetryDraft(row.client_transaction_id)}
                                 className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700"
                               >
                                 Fix & Retry

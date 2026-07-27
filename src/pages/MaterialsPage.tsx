@@ -18,7 +18,7 @@ import {
   type MaterialInput,
 } from '../api/materialsService'
 import { auditEventsQueryKey, inventoryBalancesQueryKey, materialsQueryKey, purchaseOrdersQueryKey, siteMaterialsQueryKey, transactionsQueryKey } from '../api/queryKeys'
-import { useTenantContext } from '../context/TenantContext'
+import { useTenantContext } from '../context/useTenantContext'
 import type { UOM } from '../types/schema'
 
 const uomOptions: UOM[] = ['LITER', 'KG', 'BAG', 'TON', 'PIECE', 'METER']

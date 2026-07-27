@@ -1,6 +1,6 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import { useIsFetching, useIsMutating, useQueryClient } from '@tanstack/react-query'
-import { useTenantContext } from '../context/TenantContext'
+import { useTenantContext } from '../context/useTenantContext'
 import Sidebar from './Sidebar'
 
 function Layout() {
