@@ -1,6 +1,11 @@
 import { useDeferredValue, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import { fetchInventoryBalances } from '../api/inventoryService'
+import { fetchSiteMaterials } from '../api/siteMaterialService'
+import { fetchPurchaseOrders } from '../api/purchaseOrdersService'
+import { fetchTransactionHistory } from '../api/transactionHistoryService'
+import { fetchAuditEvents } from '../api/auditService'
 import MaterialCodeNormalizer from '../components/MaterialCodeNormalizer'
 import {
   archiveMaterial,
@@ -12,7 +17,7 @@ import {
   type ManagedMaterial,
   type MaterialInput,
 } from '../api/materialsService'
-import { materialsQueryKey } from '../api/queryKeys'
+import { auditEventsQueryKey, inventoryBalancesQueryKey, materialsQueryKey, purchaseOrdersQueryKey, siteMaterialsQueryKey, transactionsQueryKey } from '../api/queryKeys'
 import { useTenantContext } from '../context/TenantContext'
 import type { UOM } from '../types/schema'
 
@@ -44,6 +49,7 @@ function MaterialsPage() {
   const [form, setForm] = useState<MaterialInput>(emptyForm)
   const [isDirty, setIsDirty] = useState(false)
   const [archiveTarget, setArchiveTarget] = useState<ManagedMaterial | null>(null)
+  const [detailsTarget, setDetailsTarget] = useState<ManagedMaterial | null>(null)
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
 
   const filters = {
@@ -59,6 +65,31 @@ function MaterialsPage() {
     queryKey: materialsQueryKey(selectedTenantId, filters),
     queryFn: () => fetchMaterials({ tenantId: selectedTenantId, ...filters }),
     placeholderData: (previousData) => previousData,
+  })
+  const detailsAssignmentsQuery = useQuery({
+    queryKey: siteMaterialsQueryKey(selectedTenantId),
+    queryFn: () => fetchSiteMaterials(selectedTenantId),
+    enabled: Boolean(detailsTarget),
+  })
+  const detailsBalancesQuery = useQuery({
+    queryKey: inventoryBalancesQueryKey(selectedTenantId, undefined, detailsTarget?.id),
+    queryFn: () => fetchInventoryBalances({ tenantId: selectedTenantId, materialId: detailsTarget!.id }),
+    enabled: Boolean(detailsTarget),
+  })
+  const detailsOrdersQuery = useQuery({
+    queryKey: purchaseOrdersQueryKey(selectedTenantId, { materialId: detailsTarget?.id }),
+    queryFn: () => fetchPurchaseOrders(selectedTenantId, { materialId: detailsTarget!.id }),
+    enabled: Boolean(detailsTarget),
+  })
+  const detailsTransactionsQuery = useQuery({
+    queryKey: transactionsQueryKey(selectedTenantId, { materialId: detailsTarget?.id, pageSize: 5 }),
+    queryFn: () => fetchTransactionHistory({ tenantId: selectedTenantId, materialId: detailsTarget!.id, pageSize: 5 }),
+    enabled: Boolean(detailsTarget),
+  })
+  const detailsAuditQuery = useQuery({
+    queryKey: auditEventsQueryKey(selectedTenantId, { resourceType: 'MATERIAL', resourceId: detailsTarget?.id }),
+    queryFn: () => fetchAuditEvents({ tenantId: selectedTenantId, resourceType: 'MATERIAL', resourceId: detailsTarget!.id, pageSize: 10 }),
+    enabled: Boolean(detailsTarget),
   })
 
   useEffect(() => {
@@ -288,6 +319,7 @@ function MaterialsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
+                        <button type="button" onClick={() => setDetailsTarget(material)} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Details</button>
                         {!material.archived_at ? (
                           <>
                             <button type="button" onClick={() => openEdit(material)} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Edit</button>
@@ -356,6 +388,39 @@ function MaterialsPage() {
                 <button type="submit" disabled={!formValid || saveMutation.isPending} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saveMutation.isPending ? 'Saving...' : 'Save Material'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {detailsTarget ? (
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailsTarget(null) }}>
+          <div className="h-full w-full max-w-2xl overflow-y-auto bg-white p-6 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="material-details-title">
+            <div className="flex items-start justify-between gap-4">
+              <div><h3 id="material-details-title" className="text-lg font-semibold text-slate-900">{detailsTarget.material_code}</h3><p className="mt-1 text-sm text-slate-600">{detailsTarget.description}</p></div>
+              <button type="button" onClick={() => setDetailsTarget(null)} aria-label="Close material details" className="text-2xl text-slate-500">×</button>
+            </div>
+            <div className="mt-5 grid grid-cols-3 gap-3 border-y border-slate-200 py-4 text-sm">
+              <div><p className="text-xs text-slate-500">Units</p><p className="font-semibold">{detailsTarget.base_uom_id} / {detailsTarget.issue_uom_id}</p></div>
+              <div><p className="text-xs text-slate-500">Conversion</p><p className="font-semibold">{detailsTarget.conversion_factor}</p></div>
+              <div><p className="text-xs text-slate-500">Status</p><p className="font-semibold">{detailsTarget.archived_at ? 'Archived' : 'Active'}</p></div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link to={`/site-materials?material=${encodeURIComponent(detailsTarget.material_code)}`} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Manage sites</Link>
+              <Link to={`/operations?mode=ledger&material=${detailsTarget.id}&type=INWARD`} className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Record receipt</Link>
+              <Link to={`/operations?mode=ledger&material=${detailsTarget.id}&type=OUTWARD`} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Record issue</Link>
+            </div>
+            <div className="mt-6 space-y-5 text-sm">
+              <section><h4 className="font-semibold text-slate-900">Sites and balances</h4><div className="mt-2 divide-y divide-slate-100 border border-slate-200">
+                {(detailsAssignmentsQuery.data ?? []).filter((item) => item.material_id === detailsTarget.id && item.is_active).map((assignment) => {
+                  const balance = detailsBalancesQuery.data?.data.find((item) => item.site_id === assignment.site_id)
+                  return <div key={assignment.site_id} className="flex items-center justify-between px-3 py-2"><span>{assignment.site_name}</span><span className="font-medium">{balance?.quantity_base_uom.toLocaleString() ?? '—'} {assignment.base_uom_id} · {balance?.status ?? 'Loading'}</span></div>
+                })}
+                {!detailsAssignmentsQuery.isLoading && !(detailsAssignmentsQuery.data ?? []).some((item) => item.material_id === detailsTarget.id && item.is_active) ? <p className="px-3 py-3 text-slate-500">No active site assignments.</p> : null}
+              </div></section>
+              <section><h4 className="font-semibold text-slate-900">Open purchase orders</h4><div className="mt-2 space-y-2">{(detailsOrdersQuery.data?.data ?? []).filter((order) => order.status !== 'COMPLETED').slice(0, 5).map((order) => <div key={order.id} className="flex justify-between border-b border-slate-100 pb-2"><span>{order.po_number} · {order.target_site_name}</span><span>{Number(order.open_quantity_base_uom).toLocaleString()} open</span></div>)}{!detailsOrdersQuery.isLoading && !(detailsOrdersQuery.data?.data ?? []).some((order) => order.status !== 'COMPLETED') ? <p className="text-slate-500">No open purchase orders.</p> : null}</div></section>
+              <section><h4 className="font-semibold text-slate-900">Recent movements</h4><div className="mt-2 space-y-2">{detailsTransactionsQuery.data?.data.map((transaction) => <div key={transaction.id} className="flex justify-between border-b border-slate-100 pb-2"><span>{transaction.site_name} · {transaction.transaction_type}</span><span>{Number(transaction.quantity).toLocaleString()} {transaction.quantity_uom}</span></div>)}{!detailsTransactionsQuery.isLoading && detailsTransactionsQuery.data?.data.length === 0 ? <p className="text-slate-500">No ledger activity.</p> : null}</div></section>
+              <section><h4 className="font-semibold text-slate-900">Audit timeline</h4><div className="mt-2 space-y-2">{detailsAuditQuery.data?.data.map((event) => <div key={event.id} className="flex justify-between border-b border-slate-100 pb-2"><span>{event.action} · {event.actor_id}</span><time className="text-xs text-slate-500">{new Date(event.created_at).toLocaleString()}</time></div>)}{!detailsAuditQuery.isLoading && detailsAuditQuery.data?.data.length === 0 ? <p className="text-slate-500">No audit events recorded.</p> : null}</div></section>
+            </div>
           </div>
         </div>
       ) : null}

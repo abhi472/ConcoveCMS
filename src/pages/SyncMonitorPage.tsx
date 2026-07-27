@@ -1,10 +1,22 @@
 import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { auditEventsQueryKey, transactionsQueryKey } from '../api/queryKeys'
+import {
+  fetchAuditEvents,
+  type AuditAction,
+  type AuditResourceType,
+} from '../api/auditService'
+import {
+  fetchTransactionDetail,
+  fetchTransactionHistory,
+} from '../api/transactionHistoryService'
 import {
   useSyncRetryContext,
   type SyncHistoryRecord,
 } from '../context/SyncRetryContext'
 import { useTenantContext } from '../context/TenantContext'
+import type { TransactionType } from '../types/schema'
 
 interface CorrectionGroup {
   rootId: string
@@ -62,6 +74,32 @@ function SyncMonitorPage() {
   const [correctionFilter, setCorrectionFilter] = useState<CorrectionFilter>('ALL')
   const [searchTerm, setSearchTerm] = useState('')
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
+  const [serverTransactionType, setServerTransactionType] = useState<TransactionType | 'ALL'>('ALL')
+  const [serverHistoryPage, setServerHistoryPage] = useState(1)
+  const [selectedTransactionId, setSelectedTransactionId] = useState('')
+  const [auditResourceType, setAuditResourceType] = useState<AuditResourceType | 'ALL'>('ALL')
+  const [auditAction, setAuditAction] = useState<AuditAction | 'ALL'>('ALL')
+  const [auditPage, setAuditPage] = useState(1)
+  const serverHistoryFilters = {
+    search: searchTerm.trim(),
+    transactionType: serverTransactionType,
+    page: serverHistoryPage,
+    pageSize: 25,
+  }
+  const { data: serverHistory, isLoading: serverHistoryLoading, isError: serverHistoryError, refetch: refetchServerHistory } = useQuery({
+    queryKey: transactionsQueryKey(selectedTenantId, serverHistoryFilters),
+    queryFn: () => fetchTransactionHistory({ tenantId: selectedTenantId, ...serverHistoryFilters }),
+  })
+  const { data: selectedTransaction, isLoading: selectedTransactionLoading } = useQuery({
+    queryKey: ['transaction-detail', selectedTenantId, selectedTransactionId],
+    queryFn: () => fetchTransactionDetail(selectedTenantId, selectedTransactionId),
+    enabled: Boolean(selectedTransactionId),
+  })
+  const auditFilters = { resourceType: auditResourceType, action: auditAction, page: auditPage, pageSize: 25 }
+  const { data: auditEvents, isLoading: auditLoading, isError: auditError, refetch: refetchAudit } = useQuery({
+    queryKey: auditEventsQueryKey(selectedTenantId, auditFilters),
+    queryFn: () => fetchAuditEvents({ tenantId: selectedTenantId, ...auditFilters }),
+  })
 
   const tenantFailedRecords = useMemo(
     () => failedRecords.filter((record) => record.tenant_id === selectedTenantId),
@@ -168,6 +206,11 @@ function SyncMonitorPage() {
         tone: 'text-rose-700 bg-rose-50 border-rose-200',
       },
       {
+        label: 'Server Ledger Rows',
+        value: serverHistory?.pagination.total ?? 0,
+        tone: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+      },
+      {
         label: 'Correction Chains',
         value: correctionGroups.length,
         tone: 'text-slate-700 bg-slate-50 border-slate-200',
@@ -178,7 +221,7 @@ function SyncMonitorPage() {
         tone: 'text-amber-800 bg-amber-50 border-amber-200',
       },
     ],
-    [correctionGroups.length, tenantFailedRecords.length, tenantMismatchCount],
+    [correctionGroups.length, serverHistory?.pagination.total, tenantFailedRecords.length, tenantMismatchCount],
   )
 
   const handleClearLocalHistory = () => {
@@ -213,7 +256,7 @@ function SyncMonitorPage() {
             />
           </label>
         </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {summaryCards.map((card) => (
             <div key={card.label} className={`rounded-lg border px-4 py-3 ${card.tone}`}>
               <p className="text-xs font-semibold uppercase tracking-wide">{card.label}</p>
@@ -329,9 +372,231 @@ function SyncMonitorPage() {
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Immutable Correction Trail</h3>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+              Successful Ledger History
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Authoritative successful transactions recorded by the backend for this tenant.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <label className="text-xs font-semibold text-slate-600">
+              <span className="sr-only">Transaction type</span>
+              <select
+                value={serverTransactionType}
+                onChange={(event) => {
+                  setServerTransactionType(event.target.value as TransactionType | 'ALL')
+                  setServerHistoryPage(1)
+                }}
+                className="rounded-md border border-slate-300 px-3 py-2"
+              >
+                <option value="ALL">All transaction types</option>
+                {(['INWARD', 'OUTWARD', 'IST_DISPATCH', 'IST_RECEIPT'] as const).map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => void refetchServerHistory()}
+              className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-3 py-2 text-left">Recorded</th>
+                <th className="px-3 py-2 text-left">Site</th>
+                <th className="px-3 py-2 text-left">Material</th>
+                <th className="px-3 py-2 text-left">Movement</th>
+                <th className="px-3 py-2 text-left">PO / Party</th>
+                <th className="px-3 py-2 text-left">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {serverHistory?.data.map((transaction) => (
+                <tr key={transaction.id}>
+                  <td className="px-3 py-3 text-xs text-slate-600">
+                    {formatRecordedAt(transaction.recorded_at)}
+                  </td>
+                  <td className="px-3 py-3 text-slate-700">{transaction.site_name}</td>
+                  <td className="px-3 py-3">
+                    <p className="font-medium text-slate-900">{transaction.material_code}</p>
+                    <p className="text-xs text-slate-500">{transaction.client_transaction_id}</p>
+                  </td>
+                  <td className="px-3 py-3">
+                    <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                      {transaction.transaction_type}
+                    </span>
+                    {transaction.correction_of_transaction_id ? (
+                      <span className="ml-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">
+                        CORRECTION
+                      </span>
+                    ) : null}
+                    <p className="mt-2 text-slate-700">
+                      {Number(transaction.quantity).toLocaleString()} {transaction.quantity_uom}
+                    </p>
+                  </td>
+                  <td className="px-3 py-3 text-xs text-slate-600">
+                    <p>{transaction.po_number ?? 'No PO'}</p>
+                    <p>{transaction.source_entity_name ?? transaction.destination_entity_name ?? '—'}</p>
+                  </td>
+                  <td className="px-3 py-3">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTransactionId(transaction.id)}
+                      className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                    >
+                      Inspect
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {serverHistoryLoading ? (
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500">Loading server history...</td></tr>
+              ) : null}
+              {serverHistoryError ? (
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-rose-700">Server history could not be loaded. Use Refresh to retry.</td></tr>
+              ) : null}
+              {!serverHistoryLoading && !serverHistoryError && serverHistory?.data.length === 0 ? (
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500">No successful ledger rows match these filters.</td></tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+
+        {serverHistory ? (
+          <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-600">
+            <p>Page {serverHistory.pagination.page} · {serverHistory.pagination.total} rows</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={serverHistoryPage === 1}
+                onClick={() => setServerHistoryPage((current) => Math.max(1, current - 1))}
+                className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                disabled={!serverHistory.pagination.has_next}
+                onClick={() => setServerHistoryPage((current) => current + 1)}
+                className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {selectedTransactionId ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="transaction-detail-title" className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 id="transaction-detail-title" className="text-lg font-semibold text-slate-900">Transaction Detail</h3>
+                <p className="mt-1 font-mono text-xs text-slate-500">{selectedTransaction?.client_transaction_id ?? selectedTransactionId}</p>
+              </div>
+              <button type="button" onClick={() => setSelectedTransactionId('')} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm">Close</button>
+            </div>
+            {selectedTransactionLoading ? <p className="mt-6 text-slate-500">Loading detail...</p> : null}
+            {selectedTransaction ? (
+              <div className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
+                <div><p className="text-xs font-semibold text-slate-500">Site</p><p>{selectedTransaction.site_name}</p></div>
+                <div><p className="text-xs font-semibold text-slate-500">Material</p><p>{selectedTransaction.material_code}</p></div>
+                <div><p className="text-xs font-semibold text-slate-500">Movement</p><p>{selectedTransaction.transaction_type} · {Number(selectedTransaction.quantity).toLocaleString()} {selectedTransaction.quantity_uom}</p></div>
+                <div><p className="text-xs font-semibold text-slate-500">Transaction Date</p><p>{formatRecordedAt(selectedTransaction.transaction_date)}</p></div>
+                <div><p className="text-xs font-semibold text-slate-500">Source</p><p>{selectedTransaction.source_entity_name ?? '—'}</p></div>
+                <div><p className="text-xs font-semibold text-slate-500">Destination</p><p>{selectedTransaction.destination_entity_name ?? '—'}</p></div>
+                <div><p className="text-xs font-semibold text-slate-500">Purchase Order</p><p>{selectedTransaction.po_number ?? '—'}</p></div>
+                <div><p className="text-xs font-semibold text-slate-500">Invoice</p><p>{selectedTransaction.commercial_details?.invoice_no ?? '—'}</p></div>
+                <div><p className="text-xs font-semibold text-slate-500">Correction Parent</p><p className="font-mono text-xs">{selectedTransaction.correction_of_transaction_id ?? '—'}</p></div>
+                <div><p className="text-xs font-semibold text-slate-500">Correction Reason</p><p>{selectedTransaction.correction_reason ?? '—'}</p></div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Master Data Audit</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Immutable material, entity, assignment, and association changes recorded by the database.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <select
+              aria-label="Audit resource type"
+              value={auditResourceType}
+              onChange={(event) => { setAuditResourceType(event.target.value as AuditResourceType | 'ALL'); setAuditPage(1) }}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="ALL">All resources</option>
+              <option value="MATERIAL">Materials</option>
+              <option value="ENTITY">Entities</option>
+              <option value="SITE_MATERIAL_ASSIGNMENT">Site materials</option>
+              <option value="ENTITY_SITE_ASSOCIATION">Entity sites</option>
+            </select>
+            <select
+              aria-label="Audit action"
+              value={auditAction}
+              onChange={(event) => { setAuditAction(event.target.value as AuditAction | 'ALL'); setAuditPage(1) }}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="ALL">All actions</option>
+              {(['CREATE', 'UPDATE', 'ARCHIVE', 'RESTORE', 'ASSIGN', 'UNASSIGN'] as const).map((action) => (
+                <option key={action} value={action}>{action}</option>
+              ))}
+            </select>
+            <button type="button" onClick={() => void refetchAudit()} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Refresh</button>
+          </div>
+        </div>
+        <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50"><tr>
+              <th className="px-3 py-2 text-left">Recorded</th><th className="px-3 py-2 text-left">Resource</th>
+              <th className="px-3 py-2 text-left">Action</th><th className="px-3 py-2 text-left">Actor</th>
+              <th className="px-3 py-2 text-left">Resource ID</th>
+            </tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {auditEvents?.data.map((event) => (
+                <tr key={event.id}>
+                  <td className="px-3 py-3 text-xs text-slate-600">{formatRecordedAt(event.created_at)}</td>
+                  <td className="px-3 py-3 text-slate-700">{event.resource_type.replaceAll('_', ' ')}</td>
+                  <td className="px-3 py-3"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{event.action}</span></td>
+                  <td className="px-3 py-3 text-slate-700">{event.actor_id}</td>
+                  <td className="px-3 py-3 font-mono text-xs text-slate-600">{event.resource_id}</td>
+                </tr>
+              ))}
+              {auditLoading ? <tr><td colSpan={5} className="px-3 py-8 text-center text-slate-500">Loading audit history...</td></tr> : null}
+              {auditError ? <tr><td colSpan={5} className="px-3 py-8 text-center text-rose-700">Audit history could not be loaded.</td></tr> : null}
+              {!auditLoading && !auditError && auditEvents?.data.length === 0 ? <tr><td colSpan={5} className="px-3 py-8 text-center text-slate-500">No audit events match these filters.</td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+        {auditEvents ? <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
+          <p>Page {auditEvents.pagination.page} · {auditEvents.pagination.total} events</p>
+          <div className="flex gap-2">
+            <button type="button" disabled={auditPage === 1} onClick={() => setAuditPage((page) => Math.max(1, page - 1))} className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-40">Previous</button>
+            <button type="button" disabled={!auditEvents.pagination.has_next} onClick={() => setAuditPage((page) => page + 1)} className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-40">Next</button>
+          </div>
+        </div> : null}
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Local Correction Draft History</h3>
         <p className="mt-2 text-sm text-slate-600">
-          Successful ledger writes stay immutable. Use Correction to generate a compensating entry instead of editing the original record.
+          Correction lineage remains local until the backend correction-audit migration is available. Successful ledger rows above are server-authoritative.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           {(['ALL', 'ORIGINAL', 'CORRECTION'] as const).map((filterValue) => (

@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { fetchMasterData } from '../api/masterDataService'
 import { inventoryDashboardQueryKey, masterDataQueryKey, siteMaterialsQueryKey } from '../api/queryKeys'
 import {
+  bulkUpdateSiteMaterialAssignments,
   fetchSiteMaterials,
   formatAssignmentError,
   removeSiteMaterialAssignment,
@@ -23,11 +24,15 @@ function AssignmentRow({
   isPending,
   onSave,
   onRemove,
+  selected,
+  onSelectedChange,
 }: {
   assignment: SiteMaterialAssignment
   isPending: boolean
   onSave: (input: SaveInput) => void
   onRemove: (assignment: SiteMaterialAssignment) => void
+  selected: boolean
+  onSelectedChange: (selected: boolean) => void
 }) {
   const [lowThreshold, setLowThreshold] = useState(assignment.low_stock_threshold)
   const [criticalThreshold, setCriticalThreshold] = useState(assignment.critical_stock_threshold)
@@ -38,6 +43,14 @@ function AssignmentRow({
 
   return (
     <tr className={assignment.is_active ? 'bg-white' : 'bg-slate-50 text-slate-500'}>
+      <td className="px-4 py-3">
+        <input
+          type="checkbox"
+          aria-label={`Select ${assignment.material_code}`}
+          checked={selected}
+          onChange={(event) => onSelectedChange(event.target.checked)}
+        />
+      </td>
       <td className="px-4 py-3">
         <p className="font-medium text-slate-900">{assignment.material_code}</p>
         <p className="mt-0.5 text-xs text-slate-500">{assignment.material_description}</p>
@@ -117,6 +130,7 @@ function SiteMaterialsPage() {
   const [siteSelection, setSiteSelection] = useState('')
   const [search, setSearch] = useState(() => searchParams.get('material') ?? '')
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
+  const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(() => new Set())
 
   const masterDataQuery = useQuery({
     queryKey: masterDataQueryKey(selectedTenantId),
@@ -169,6 +183,28 @@ function SiteMaterialsPage() {
     onError: (error) => setFeedback({ kind: 'error', message: formatAssignmentError(error) }),
   })
 
+  const bulkMutation = useMutation({
+    mutationFn: (action: 'ASSIGN' | 'UNASSIGN') => bulkUpdateSiteMaterialAssignments({
+      tenantId: selectedTenantId,
+      items: (assignmentsQuery.data ?? [])
+        .filter((assignment) => selectedMaterialIds.has(assignment.material_id))
+        .map((assignment) => ({
+          siteId: assignment.site_id,
+          materialId: assignment.material_id,
+          action,
+          lowStockThreshold: Number(assignment.low_stock_threshold),
+          criticalStockThreshold: Number(assignment.critical_stock_threshold),
+        })),
+    }),
+    onSuccess: async (_, action) => {
+      const count = selectedMaterialIds.size
+      setFeedback({ kind: 'success', message: `${count} material${count === 1 ? '' : 's'} ${action === 'ASSIGN' ? 'assigned' : 'unassigned'}.` })
+      setSelectedMaterialIds(new Set())
+      await refreshAssignments()
+    },
+    onError: (error) => setFeedback({ kind: 'error', message: formatAssignmentError(error) }),
+  })
+
   const normalizedSearch = search.trim().toLowerCase()
   const assignments = (assignmentsQuery.data ?? []).filter((assignment) =>
     !normalizedSearch ||
@@ -211,6 +247,12 @@ function SiteMaterialsPage() {
         <div className="pb-2 text-sm text-slate-600">
           {assignments.filter((item) => item.is_active).length} assigned / {assignments.length} shown
         </div>
+        {selectedMaterialIds.size > 0 ? (
+          <div className="flex gap-2 pb-1">
+            <button type="button" disabled={bulkMutation.isPending} onClick={() => bulkMutation.mutate('ASSIGN')} className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">Assign selected</button>
+            <button type="button" disabled={bulkMutation.isPending} onClick={() => bulkMutation.mutate('UNASSIGN')} className="rounded-md border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-40">Unassign selected</button>
+          </div>
+        ) : null}
       </div>
 
       {feedback ? (
@@ -241,6 +283,18 @@ function SiteMaterialsPage() {
             <table className="min-w-full divide-y divide-slate-200 text-sm">
               <thead className="bg-slate-50">
                 <tr>
+                  <th className="px-4 py-3 text-left">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all shown materials"
+                      checked={assignments.length > 0 && assignments.every((item) => selectedMaterialIds.has(item.material_id))}
+                      onChange={(event) => setSelectedMaterialIds((current) => {
+                        const next = new Set(current)
+                        assignments.forEach((item) => event.target.checked ? next.add(item.material_id) : next.delete(item.material_id))
+                        return next
+                      })}
+                    />
+                  </th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">Material</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">UoM</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">Low</th>
@@ -257,6 +311,13 @@ function SiteMaterialsPage() {
                     isPending={(saveMutation.isPending || removeMutation.isPending) && pendingMaterialId === assignment.material_id}
                     onSave={(input) => { setFeedback(null); saveMutation.mutate(input) }}
                     onRemove={(item) => { setFeedback(null); removeMutation.mutate(item) }}
+                    selected={selectedMaterialIds.has(assignment.material_id)}
+                    onSelectedChange={(selected) => setSelectedMaterialIds((current) => {
+                      const next = new Set(current)
+                      if (selected) next.add(assignment.material_id)
+                      else next.delete(assignment.material_id)
+                      return next
+                    })}
                   />
                 ))}
               </tbody>

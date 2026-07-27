@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { formatApiError } from '../api/errorUtils'
-import { masterDataQueryKey, purchaseOrdersQueryKey } from '../api/queryKeys'
+import { entitiesQueryKey, inventoryBalancesQueryKey, masterDataQueryKey, purchaseOrdersQueryKey } from '../api/queryKeys'
+import { fetchInventoryBalances } from '../api/inventoryService'
+import { fetchEntities } from '../api/entitiesService'
 import {
   createFluidDispense,
   syncTransactionsBatch,
@@ -10,9 +12,11 @@ import {
 import { fetchMasterData } from '../api/masterDataService'
 import {
   createPurchaseOrder,
+  fetchPurchaseOrder,
   fetchPurchaseOrders,
   formatPurchaseOrderError,
   updatePurchaseOrderStatus,
+  updatePurchaseOrder,
 } from '../api/purchaseOrdersService'
 import POProgressTracker from '../components/POProgressTracker'
 import type {
@@ -37,6 +41,28 @@ type SubmissionContext = 'standard' | 'retry' | 'correction'
 interface OperationNotice {
   tone: 'info' | 'success' | 'warning'
   message: string
+}
+
+const PROCUREMENT_DRAFT_VERSION = 1
+
+function procurementDraftKey(tenantId: string) {
+  return `concove:procurement-draft:v${PROCUREMENT_DRAFT_VERSION}:${tenantId}`
+}
+
+function loadProcurementRecovery(tenantId: string) {
+  try {
+    const raw = localStorage.getItem(procurementDraftKey(tenantId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as {
+      version: number
+      editingPurchaseOrderId: string
+      draft: { po_number: string; vendor_id: string; target_site_id: string; status: POStatus; expected_delivery_date: string; client_request_id: string }
+      lineItems: ProcurementLineDraft[]
+    }
+    return parsed.version === PROCUREMENT_DRAFT_VERSION && parsed.lineItems.length > 0 ? parsed : null
+  } catch {
+    return null
+  }
 }
 
 function toNumber(value: string) {
@@ -117,14 +143,18 @@ function OperationsPage() {
     searchParams.get('mode') === 'ledger' ? 'ledger' : 'procurement',
   )
 
-  const [procurementDraft, setProcurementDraft] = useState({
+  const [procurementRecovery] = useState(() => loadProcurementRecovery(selectedTenantId))
+  const [editingPurchaseOrderId, setEditingPurchaseOrderId] = useState(procurementRecovery?.editingPurchaseOrderId ?? '')
+
+  const [procurementDraft, setProcurementDraft] = useState(procurementRecovery?.draft ?? {
+    client_request_id: crypto.randomUUID(),
     po_number: '',
     vendor_id: '',
     target_site_id: '',
     status: 'DRAFT' as POStatus,
     expected_delivery_date: '',
   })
-  const [lineItems, setLineItems] = useState<ProcurementLineDraft[]>([
+  const [lineItems, setLineItems] = useState<ProcurementLineDraft[]>(procurementRecovery?.lineItems ?? [
     {
       id: crypto.randomUUID(),
       material_id: '',
@@ -137,6 +167,24 @@ function OperationsPage() {
     kind: 'success' | 'error'
     message: string
   } | null>(null)
+
+  useEffect(() => {
+    const hasDraftContent = Boolean(
+      procurementDraft.po_number || procurementDraft.vendor_id || procurementDraft.target_site_id ||
+      lineItems.some((item) => item.material_id),
+    )
+    if (!hasDraftContent) {
+      localStorage.removeItem(procurementDraftKey(selectedTenantId))
+      return
+    }
+    localStorage.setItem(procurementDraftKey(selectedTenantId), JSON.stringify({
+      version: PROCUREMENT_DRAFT_VERSION,
+      editingPurchaseOrderId,
+      draft: procurementDraft,
+      lineItems,
+      savedAt: new Date().toISOString(),
+    }))
+  }, [editingPurchaseOrderId, lineItems, procurementDraft, selectedTenantId])
 
   const [ledgerForm, setLedgerForm] = useState({
     site_id: searchParams.get('site') ?? '',
@@ -161,6 +209,32 @@ function OperationsPage() {
     correction_of_transaction_id: '',
     correction_reason: '',
   })
+  const balanceQuery = useQuery({
+    queryKey: inventoryBalancesQueryKey(selectedTenantId, ledgerForm.site_id, ledgerForm.material_id),
+    queryFn: () => fetchInventoryBalances({
+      tenantId: selectedTenantId,
+      siteId: ledgerForm.site_id,
+      materialId: ledgerForm.material_id,
+    }),
+    enabled: Boolean(ledgerForm.site_id && ledgerForm.material_id),
+  })
+  const operationalEntitiesQuery = useQuery({
+    queryKey: entitiesQueryKey(selectedTenantId, { status: 'active', siteId: ledgerForm.site_id }),
+    queryFn: () => fetchEntities({
+      tenantId: selectedTenantId,
+      status: 'active',
+      siteId: ledgerForm.site_id,
+      pageSize: 200,
+    }),
+    enabled: Boolean(ledgerForm.site_id),
+  })
+  const operationalEntities = operationalEntitiesQuery.data?.data ?? entities
+  const operationalVendors = operationalEntities.filter((entity) => entity.entity_type === 'VENDOR')
+  const operationalNonSiteEntities = operationalEntities.filter((entity) => entity.entity_type !== 'INTERNAL_SITE')
+  const selectedBalance = balanceQuery.data?.data[0]
+  const outboundQuantityExceedsBalance = (
+    ledgerForm.transaction_type === 'OUTWARD' || ledgerForm.transaction_type === 'IST_DISPATCH'
+  ) && Number(ledgerForm.quantity) > Number(selectedBalance?.quantity_base_uom ?? 0)
   const [batchResult, setBatchResult] = useState<BatchSyncResponse | null>(null)
   const [fluidResult, setFluidResult] = useState<FluidDispenseResponse | null>(null)
   const [batchError, setBatchError] = useState('')
@@ -306,17 +380,17 @@ function OperationsPage() {
 
   const sourceOptions = useMemo(() => {
     if (ledgerForm.transaction_type === 'INWARD') {
-      return vendors
+      return operationalVendors
     }
 
     if (ledgerForm.transaction_type === 'OUTWARD') {
-      return nonSiteEntities.filter(
+      return operationalNonSiteEntities.filter(
         (entity) => entity.entity_type === 'SUBCONTRACTOR' || entity.entity_type === 'EMPLOYEE',
       )
     }
 
-    return nonSiteEntities
-  }, [ledgerForm.transaction_type, nonSiteEntities, vendors])
+    return operationalNonSiteEntities
+  }, [ledgerForm.transaction_type, operationalNonSiteEntities, operationalVendors])
 
   const handleAddLineItem = () => {
     setLineItems((current) => [
@@ -339,8 +413,10 @@ function OperationsPage() {
     ])
   }
 
-  const createPurchaseOrderMutation = useMutation({
-    mutationFn: () => createPurchaseOrder(selectedTenantId, {
+  const savePurchaseOrderMutation = useMutation({
+    mutationFn: () => {
+      const input = {
+      clientRequestId: procurementDraft.client_request_id,
       poNumber: procurementDraft.po_number,
       vendorId: procurementDraft.vendor_id,
       targetSiteId: procurementDraft.target_site_id,
@@ -350,14 +426,21 @@ function OperationsPage() {
         orderedQuantityBaseUom: Number(item.ordered_quantity_base_uom),
         unitRate: Number(item.unit_rate),
       })),
-    }),
+      }
+      return editingPurchaseOrderId
+        ? updatePurchaseOrder(selectedTenantId, editingPurchaseOrderId, input)
+        : createPurchaseOrder(selectedTenantId, input)
+    },
     onSuccess: async (purchaseOrder) => {
       await invalidatePurchaseOrders()
       setProcurementFeedback({
         kind: 'success',
-        message: `${purchaseOrder.po_number} was saved as a draft.`,
+        message: `${purchaseOrder.po_number} was ${editingPurchaseOrderId ? 'updated' : 'saved'} as a draft.`,
       })
+      localStorage.removeItem(procurementDraftKey(selectedTenantId))
+      setEditingPurchaseOrderId('')
       setProcurementDraft({
+        client_request_id: crypto.randomUUID(),
         po_number: '',
         vendor_id: '',
         target_site_id: '',
@@ -374,6 +457,30 @@ function OperationsPage() {
     onError: (error) => {
       setProcurementFeedback({ kind: 'error', message: formatPurchaseOrderError(error) })
     },
+  })
+
+  const loadPurchaseOrderMutation = useMutation({
+    mutationFn: (purchaseOrderId: string) => fetchPurchaseOrder(selectedTenantId, purchaseOrderId),
+    onSuccess: (purchaseOrder) => {
+      setEditingPurchaseOrderId(purchaseOrder.id)
+      setProcurementDraft({
+        client_request_id: crypto.randomUUID(),
+        po_number: purchaseOrder.po_number,
+        vendor_id: purchaseOrder.vendor_id,
+        target_site_id: purchaseOrder.target_site_id,
+        status: 'DRAFT',
+        expected_delivery_date: purchaseOrder.expected_delivery_date?.slice(0, 10) ?? '',
+      })
+      setLineItems((purchaseOrder.items ?? []).map((item) => ({
+        id: item.id,
+        material_id: item.material_id,
+        ordered_quantity_base_uom: Number(item.ordered_quantity_base_uom),
+        unit_rate: Number(item.unit_rate),
+      })))
+      setActiveSection('procurement')
+      setProcurementFeedback({ kind: 'success', message: `Editing ${purchaseOrder.po_number}.` })
+    },
+    onError: (error) => setProcurementFeedback({ kind: 'error', message: formatPurchaseOrderError(error) }),
   })
 
   const updatePurchaseOrderStatusMutation = useMutation({
@@ -416,7 +523,7 @@ function OperationsPage() {
       setProcurementFeedback({ kind: 'error', message: 'Each material may appear only once per purchase order.' })
       return
     }
-    createPurchaseOrderMutation.mutate()
+    savePurchaseOrderMutation.mutate()
   }
 
   const handleBatchSync = async () => {
@@ -499,6 +606,11 @@ function OperationsPage() {
 
       const response = await syncTransactionsBatch(payload)
       setBatchResult(response)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['transactions', selectedTenantId] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory-balances', selectedTenantId] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory-dashboard', selectedTenantId] }),
+      ])
 
       const successCount = response.results.filter((row) => row.sync_status === 'SUCCESS').length
       const failureCount = response.results.length - successCount
@@ -658,6 +770,8 @@ function OperationsPage() {
             <p className="text-sm text-slate-600">
               Create tenant purchase orders and advance them through their fulfillment lifecycle.
             </p>
+            {editingPurchaseOrderId ? <p className="mt-2 text-xs font-semibold text-amber-700">Editing persisted DRAFT order. Saving replaces its header and lines atomically.</p> : null}
+            {procurementRecovery ? <p className="mt-2 text-xs text-slate-500">Recovered an unsaved procurement draft from this browser.</p> : null}
             {procurementFeedback ? (
               <p className={`mt-2 rounded-md border px-3 py-2 text-sm ${
                 procurementFeedback.kind === 'success'
@@ -853,10 +967,10 @@ function OperationsPage() {
             <button
               type="button"
               onClick={handleProcurementSave}
-              disabled={createPurchaseOrderMutation.isPending}
+              disabled={savePurchaseOrderMutation.isPending}
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {createPurchaseOrderMutation.isPending ? 'Saving...' : 'Save Draft'}
+              {savePurchaseOrderMutation.isPending ? 'Saving...' : editingPurchaseOrderId ? 'Update Draft' : 'Save Draft'}
             </button>
           </div>
 
@@ -911,6 +1025,9 @@ function OperationsPage() {
                         <td className="px-3 py-2 text-slate-700">{order.status}</td>
                         <td className="px-3 py-2">
                           <div className="flex min-w-64 gap-2">
+                            {order.status === 'DRAFT' ? (
+                              <button type="button" onClick={() => loadPurchaseOrderMutation.mutate(order.id)} disabled={loadPurchaseOrderMutation.isPending} className="rounded-md border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 disabled:opacity-40">Edit</button>
+                            ) : null}
                             <select
                               value={statusDrafts[order.id] ?? order.status}
                               onChange={(event) =>
@@ -1087,6 +1204,25 @@ function OperationsPage() {
               />
             </label>
 
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm md:col-span-2">
+              {balanceQuery.isFetching ? (
+                <p className="text-slate-500">Loading authoritative balance...</p>
+              ) : selectedBalance ? (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p><span className="font-semibold text-slate-900">Available:</span> {selectedBalance.quantity_base_uom.toLocaleString()} {selectedBalance.base_uom_id}</p>
+                  <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-slate-700">{selectedBalance.status}</span>
+                  <p className="w-full text-xs text-slate-500">Critical at {Number(selectedBalance.critical_stock_threshold).toLocaleString()} · Low at {Number(selectedBalance.low_stock_threshold).toLocaleString()}</p>
+                </div>
+              ) : ledgerForm.site_id && ledgerForm.material_id ? (
+                <p className="text-rose-700">This material is not actively assigned to the selected site.</p>
+              ) : (
+                <p className="text-slate-500">Select a site and material to load current stock.</p>
+              )}
+              {outboundQuantityExceedsBalance ? (
+                <p className="mt-2 font-medium text-rose-700">Quantity exceeds available stock. The server will reject this entry.</p>
+              ) : null}
+            </div>
+
             <label className="space-y-0.5 text-sm font-medium text-slate-700">
               <span>Purchase Order</span>
               <select
@@ -1155,7 +1291,7 @@ function OperationsPage() {
                 className="w-full rounded-md border border-slate-300 px-3 py-2"
               >
                 <option value="">Optional destination entity</option>
-                {nonSiteEntities.map((entity) => (
+                {operationalNonSiteEntities.map((entity) => (
                   <option key={entity.id} value={entity.id}>
                     {entity.name}
                   </option>

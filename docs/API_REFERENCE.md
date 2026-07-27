@@ -36,7 +36,7 @@ Material codes are normalized server-side to lowercase kebab-case and are unique
 ### Entities Catalog
 
 **Endpoints:**
-- `GET /api/v1/entities?tenant_id&search&entity_type&status&page&page_size`
+- `GET /api/v1/entities?tenant_id&search&entity_type&status&site_id&page&page_size`
 - `POST /api/v1/entities`
 - `GET /api/v1/entities/{entity_id}?tenant_id`
 - `PATCH /api/v1/entities/{entity_id}`
@@ -48,24 +48,28 @@ Material codes are normalized server-side to lowercase kebab-case and are unique
 
 Profile fields are validated by entity type. Employees and subcontractors use `ASSIGNED` site relationships and may have one primary site. Vendors use non-restrictive `PREFERRED` relationships. Site archive is blocked by non-zero stock, open target POs, or active associations; vendor archive is blocked by open POs; employee/subcontractor archive is blocked by active site associations.
 
+When `site_id` is supplied, employees and subcontractors are restricted to active assignments for that site. Vendors remain tenant-wide, with preferred vendors ordered first.
+
 ### Site-Material Assignments
 
 **Endpoints:**
 - `GET /api/v1/inventory/site-materials?tenant_id&site_id`
+- `POST /api/v1/inventory/site-materials/bulk`
 - `PUT /api/v1/inventory/sites/{site_id}/materials/{material_id}`
 - `DELETE /api/v1/inventory/sites/{site_id}/materials/{material_id}?tenant_id`
 
-Unassignment is lifecycle-based and returns structured HTTP 409 blockers for non-zero stock or open purchase orders. New transaction writes require an active assignment.
+Bulk requests accept 1-200 `ASSIGN` or `UNASSIGN` items and apply atomically. Unassignment is lifecycle-based and returns structured HTTP 409 blockers for non-zero stock or open purchase orders. New transaction writes require an active assignment.
 
 ### Purchase Orders
 
 **Endpoints:**
-- `GET /api/v1/purchase-orders?tenant_id&search&status&page&page_size`
+- `GET /api/v1/purchase-orders?tenant_id&search&status&site_id&vendor_id&material_id&page&page_size`
 - `POST /api/v1/purchase-orders`
 - `GET /api/v1/purchase-orders/{purchase_order_id}?tenant_id`
+- `PATCH /api/v1/purchase-orders/{purchase_order_id}`
 - `PATCH /api/v1/purchase-orders/{purchase_order_id}/status`
 
-Creation atomically persists a DRAFT purchase order and its line items. The vendor and target site must be active entities in the tenant, every material must be active and assigned to the target site, quantities must be positive, rates must be non-negative, and a material may appear only once per order.
+Creation atomically persists a DRAFT purchase order and its line items. `client_request_id` provides durable replay idempotency independently of PO-number uniqueness. DRAFT headers and lines may be replaced atomically with `PATCH`; non-DRAFT edits return `PO_NOT_EDITABLE`. The vendor and target site must be active entities in the tenant, every material must be active and assigned to the target site, quantities must be positive, rates must be non-negative, and a material may appear only once per order.
 
 List responses include `line_count`, `ordered_quantity_base_uom`, `received_quantity_base_uom`, and `open_quantity_base_uom`. Detail responses include received and open quantities per line. These values are calculated from immutable INWARD ledger entries rather than stored counters.
 
@@ -140,6 +144,12 @@ PO-linked INWARD transactions lock the order while validating that it is APPROVE
 - When `site_id` is omitted, balances include all tenant sites for the heatmap.
 - `generated_at` and each balance `updated_at` must be valid ISO 8601 timestamps.
 
+### Inventory Balances
+
+**Endpoint:** `GET /api/v1/inventory/balances?tenant_id&site_id&material_id`
+
+Returns authoritative active-assignment balances, base UOM, thresholds, and `OK|LOW|CRITICAL|OUT_OF_STOCK` status. `site_id` and `material_id` are optional filters. Operations uses this endpoint for advisory inline guidance; outbound writes remain protected by a transaction-scoped backend stock check.
+
 ### Transaction Batch (Write)
 
 **Endpoint:** `POST /api/v1/sync/transactions/batch`
@@ -164,6 +174,8 @@ PO-linked INWARD transactions lock the order while validating that it is APPROVE
 - Transaction types: INWARD, OUTWARD, IST_DISPATCH, IST_RECEIPT
 - Sites, materials, source entities, and destination entities must be active.
 - The material must be actively assigned to the transaction site.
+- Employees and subcontractors referenced by normal writes must be actively assigned to the site. Corrections retain historical-reference exceptions.
+- OUTWARD and IST_DISPATCH writes lock the site/material policy and reject quantities above the current balance.
 - When `po_id` is supplied, the transaction must be an INWARD receipt matching the PO site, vendor, material line, lifecycle status, and remaining open quantity.
 
 ### Fluid Dispense (Rapid Write)
@@ -173,6 +185,22 @@ PO-linked INWARD transactions lock the order while validating that it is APPROVE
 **Request Body:** Fluid-specific transaction with `site_id` and `vehicle_id`
 
 **Response:** HTTP 207 Multi-Status (same structure as batch)
+
+### Transaction History
+
+**Endpoints:**
+- `GET /api/v1/transactions?tenant_id&search&site_id&material_id&transaction_type&date_from&date_to&page&page_size`
+- `GET /api/v1/transactions/{transaction_id}?tenant_id`
+
+The list is the server-authoritative history of successful immutable ledger rows. It returns tenant-scoped site/material names, base UOM, PO references, source/destination names, transaction time, server-recorded time, durable `correction_of_transaction_id` and `correction_reason`, and pagination metadata. Detail responses also include commercial and volumetric extensions.
+
+Failed HTTP 207 rows are not persisted because no ledger transaction was created. The CMS retains only those failed/unsent payloads locally for recovery. Successful records and correction lineage are server-authoritative.
+
+### Master Data Audit
+
+**Endpoint:** `GET /api/v1/audit-events?tenant_id&resource_type&resource_id&action&page&page_size`
+
+V7 database triggers write immutable CREATE, UPDATE, ARCHIVE, RESTORE, ASSIGN, and UNASSIGN events in the same transaction as material, entity, site-material, and entity-site mutations. The actor defaults to trusted `cms-service`; arbitrary browser display names are not accepted.
 
 ---
 
@@ -199,7 +227,19 @@ Individual records in the batch may succeed or fail. Check `results` array for p
 
 ## Frontend Implementation Notes
 
-- Use resource-specific `materialsQueryKey`, `entitiesQueryKey`, `entitySitesQueryKey`, `siteMaterialsQueryKey`, and `purchaseOrdersQueryKey` keys for managed resources. Retain `masterDataQueryKey` for bootstrap consumers.
+- Use resource-specific `materialsQueryKey`, `entitiesQueryKey`, `entitySitesQueryKey`, `siteMaterialsQueryKey`, `purchaseOrdersQueryKey`, and `transactionsQueryKey` keys for managed resources. Retain `masterDataQueryKey` for bootstrap consumers.
 - Persist failed 207 records in `SyncRetryContext` for retry workflows
-- Store successful transactions in sync history for correction draft creation
+- Read successful transactions and correction lineage from the server; local storage is limited to failed/unsent recovery and procurement draft recovery
 - Display tenant-mismatch errors to operator immediately
+
+## Deployment Order
+
+For this release, apply migrations before deploying the matching backend:
+
+1. `V6__transaction_correction_lineage.sql`
+2. `V7__master_data_audit_triggers.sql`
+3. `V8__purchase_order_idempotency.sql`
+4. Backend API deployment
+5. CMS deployment
+
+Run V6-V8 against a non-production PostgreSQL database first. pg-mem validates controller behavior but does not execute PostgreSQL trigger migrations.

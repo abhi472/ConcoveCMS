@@ -1,5 +1,11 @@
 import { useDeferredValue, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
+import { fetchInventoryBalances } from '../api/inventoryService'
+import { fetchSiteMaterials } from '../api/siteMaterialService'
+import { fetchPurchaseOrders } from '../api/purchaseOrdersService'
+import { fetchTransactionHistory } from '../api/transactionHistoryService'
+import { fetchAuditEvents } from '../api/auditService'
 import {
   archiveEntity,
   createEntity,
@@ -13,7 +19,7 @@ import {
   type EntityInput,
   type ManagedEntity,
 } from '../api/entitiesService'
-import { entitiesQueryKey, entitySitesQueryKey } from '../api/queryKeys'
+import { auditEventsQueryKey, entitiesQueryKey, entitySitesQueryKey, inventoryBalancesQueryKey, purchaseOrdersQueryKey, siteMaterialsQueryKey, transactionsQueryKey } from '../api/queryKeys'
 import { useTenantContext } from '../context/TenantContext'
 import type { EntityType } from '../types/schema'
 
@@ -106,6 +112,7 @@ function EntitiesPage() {
   const [isDirty, setIsDirty] = useState(false)
   const [archiveTarget, setArchiveTarget] = useState<ManagedEntity | null>(null)
   const [associationTarget, setAssociationTarget] = useState<ManagedEntity | null>(null)
+  const [detailsTarget, setDetailsTarget] = useState<ManagedEntity | null>(null)
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
 
   const filters = { search: deferredSearch, entityType, status, page, pageSize: 50 }
@@ -123,6 +130,38 @@ function EntitiesPage() {
     queryKey: entitySitesQueryKey(selectedTenantId, associationTarget?.id ?? ''),
     queryFn: () => fetchEntitySites(selectedTenantId, associationTarget!.id),
     enabled: Boolean(associationTarget),
+  })
+  const detailsAssociationsQuery = useQuery({
+    queryKey: entitySitesQueryKey(selectedTenantId, detailsTarget?.id ?? ''),
+    queryFn: () => fetchEntitySites(selectedTenantId, detailsTarget!.id),
+    enabled: Boolean(detailsTarget && detailsTarget.entity_type !== 'INTERNAL_SITE'),
+  })
+  const detailsAssignmentsQuery = useQuery({
+    queryKey: siteMaterialsQueryKey(selectedTenantId, detailsTarget?.entity_type === 'INTERNAL_SITE' ? detailsTarget.id : undefined),
+    queryFn: () => fetchSiteMaterials(selectedTenantId, detailsTarget!.id),
+    enabled: detailsTarget?.entity_type === 'INTERNAL_SITE',
+  })
+  const detailsBalancesQuery = useQuery({
+    queryKey: inventoryBalancesQueryKey(selectedTenantId, detailsTarget?.entity_type === 'INTERNAL_SITE' ? detailsTarget.id : undefined),
+    queryFn: () => fetchInventoryBalances({ tenantId: selectedTenantId, siteId: detailsTarget!.id }),
+    enabled: detailsTarget?.entity_type === 'INTERNAL_SITE',
+  })
+  const detailsOrdersQuery = useQuery({
+    queryKey: purchaseOrdersQueryKey(selectedTenantId, { entityId: detailsTarget?.id, entityType: detailsTarget?.entity_type }),
+    queryFn: () => fetchPurchaseOrders(selectedTenantId, detailsTarget?.entity_type === 'VENDOR'
+      ? { vendorId: detailsTarget.id }
+      : { siteId: detailsTarget!.id }),
+    enabled: detailsTarget?.entity_type === 'INTERNAL_SITE' || detailsTarget?.entity_type === 'VENDOR',
+  })
+  const detailsTransactionsQuery = useQuery({
+    queryKey: transactionsQueryKey(selectedTenantId, { siteId: detailsTarget?.id, pageSize: 5 }),
+    queryFn: () => fetchTransactionHistory({ tenantId: selectedTenantId, siteId: detailsTarget!.id, pageSize: 5 }),
+    enabled: detailsTarget?.entity_type === 'INTERNAL_SITE',
+  })
+  const detailsAuditQuery = useQuery({
+    queryKey: auditEventsQueryKey(selectedTenantId, { resourceType: 'ENTITY', resourceId: detailsTarget?.id }),
+    queryFn: () => fetchAuditEvents({ tenantId: selectedTenantId, resourceType: 'ENTITY', resourceId: detailsTarget!.id, pageSize: 10 }),
+    enabled: Boolean(detailsTarget),
   })
 
   useEffect(() => {
@@ -272,7 +311,7 @@ function EntitiesPage() {
           <thead className="bg-slate-50"><tr><th className="px-4 py-3 text-left font-semibold text-slate-600">Name</th><th className="px-4 py-3 text-left font-semibold text-slate-600">Profile</th><th className="px-4 py-3 text-left font-semibold text-slate-600">Contact</th><th className="px-4 py-3 text-left font-semibold text-slate-600">Status</th><th className="px-4 py-3 text-right font-semibold text-slate-600">Actions</th></tr></thead>
           <tbody className="divide-y divide-slate-100">{entities.map((entity) => <tr key={entity.id} className={entity.archived_at ? 'bg-slate-50 text-slate-500' : 'hover:bg-slate-50'}>
             <td className="px-4 py-3 font-medium text-slate-900">{entity.name}</td><td className="px-4 py-3 text-slate-600">{profileSummary(entity)}</td><td className="px-4 py-3 text-slate-600">{entity.phone || entity.address || '—'}</td><td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${entity.archived_at ? 'bg-slate-200 text-slate-600' : 'bg-emerald-100 text-emerald-800'}`}>{entity.archived_at ? 'Archived' : 'Active'}</span></td>
-            <td className="px-4 py-3"><div className="flex justify-end gap-2">{!entity.archived_at ? <><button type="button" onClick={() => openEdit(entity)} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Edit</button>{entity.entity_type !== 'INTERNAL_SITE' ? <button type="button" onClick={() => { setFeedback(null); setAssociationTarget(entity) }} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Sites</button> : null}<button type="button" onClick={() => { setFeedback(null); setArchiveTarget(entity) }} className="rounded-md border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-700">Archive</button></> : <button type="button" disabled={restoreMutation.isPending} onClick={() => restoreMutation.mutate(entity)} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Restore</button>}</div></td>
+            <td className="px-4 py-3"><div className="flex justify-end gap-2"><button type="button" onClick={() => setDetailsTarget(entity)} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Details</button>{!entity.archived_at ? <><button type="button" onClick={() => openEdit(entity)} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Edit</button>{entity.entity_type !== 'INTERNAL_SITE' ? <button type="button" onClick={() => { setFeedback(null); setAssociationTarget(entity) }} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Sites</button> : null}<button type="button" onClick={() => { setFeedback(null); setArchiveTarget(entity) }} className="rounded-md border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-700">Archive</button></> : <button type="button" disabled={restoreMutation.isPending} onClick={() => restoreMutation.mutate(entity)} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Restore</button>}</div></td>
           </tr>)}</tbody>
         </table></div>
         <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-600"><span>{total.toLocaleString()} records</span><div className="flex items-center gap-3"><button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-40">Previous</button><span>Page {page} of {pageCount}</span><button type="button" disabled={page >= pageCount} onClick={() => setPage((value) => value + 1)} className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-40">Next</button></div></div>
@@ -287,6 +326,22 @@ function EntitiesPage() {
           {feedback?.kind === 'error' ? <p className="border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{feedback.message}</p> : null}
           <div className="flex justify-end gap-2 border-t border-slate-200 pt-4"><button type="button" onClick={closeEditor} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button><button type="submit" disabled={!form.name.trim() || saveMutation.isPending} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saveMutation.isPending ? 'Saving...' : 'Save'}</button></div>
         </form>
+      </div></div> : null}
+
+      {detailsTarget ? <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailsTarget(null) }}><div className="h-full w-full max-w-2xl overflow-y-auto bg-white p-6 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="entity-details-title">
+        <div className="flex items-start justify-between gap-4"><div><h3 id="entity-details-title" className="text-lg font-semibold text-slate-900">{detailsTarget.name}</h3><p className="mt-1 text-sm text-slate-600">{detailsTarget.entity_type.replace('_', ' ')} · {detailsTarget.archived_at ? 'Archived' : 'Active'}</p></div><button type="button" onClick={() => setDetailsTarget(null)} aria-label="Close entity details" className="text-2xl text-slate-500">×</button></div>
+        <dl className="mt-5 grid gap-3 border-y border-slate-200 py-4 text-sm sm:grid-cols-2">{profileFields[detailsTarget.entity_type].map((field) => {
+          const apiKey = field.key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`) as keyof ManagedEntity
+          return <div key={field.key}><dt className="text-xs text-slate-500">{field.label}</dt><dd className="font-medium text-slate-900">{String(detailsTarget[apiKey] ?? '—')}</dd></div>
+        })}</dl>
+        <div className="mt-4 flex flex-wrap gap-2">{detailsTarget.entity_type === 'INTERNAL_SITE' ? <><Link to={`/site-materials?site=${detailsTarget.id}`} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Manage materials</Link><Link to={`/dashboard?site=${detailsTarget.id}`} className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Open dashboard</Link><Link to={`/operations?mode=ledger&site=${detailsTarget.id}`} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Record movement</Link></> : <button type="button" onClick={() => { setDetailsTarget(null); setAssociationTarget(detailsTarget) }} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Manage sites</button>}</div>
+        <div className="mt-6 space-y-5 text-sm">
+          {detailsTarget.entity_type === 'INTERNAL_SITE' ? <section><h4 className="font-semibold text-slate-900">Stock exceptions</h4><p className="mt-1 text-xs text-slate-500">{(detailsAssignmentsQuery.data ?? []).filter((item) => item.is_active).length} assigned materials</p><div className="mt-2 space-y-2">{(detailsBalancesQuery.data?.data ?? []).filter((balance) => balance.status !== 'OK').slice(0, 8).map((balance) => <div key={balance.material_id} className="flex justify-between border-b border-slate-100 pb-2"><span>{balance.material_code}</span><span>{balance.quantity_base_uom.toLocaleString()} {balance.base_uom_id} · {balance.status}</span></div>)}{!detailsBalancesQuery.isLoading && !(detailsBalancesQuery.data?.data ?? []).some((balance) => balance.status !== 'OK') ? <p className="text-slate-500">No stock exceptions.</p> : null}</div></section> : null}
+          {detailsTarget.entity_type !== 'INTERNAL_SITE' ? <section><h4 className="font-semibold text-slate-900">Site relationships</h4><div className="mt-2 space-y-2">{detailsAssociationsQuery.data?.filter((item) => item.is_active).map((association) => <div key={association.id} className="flex justify-between border-b border-slate-100 pb-2"><span>{association.site_name}</span><span>{association.is_primary ? 'Primary' : association.association_type}</span></div>)}{!detailsAssociationsQuery.isLoading && !detailsAssociationsQuery.data?.some((item) => item.is_active) ? <p className="text-slate-500">No active site relationships.</p> : null}</div></section> : null}
+          {(detailsTarget.entity_type === 'INTERNAL_SITE' || detailsTarget.entity_type === 'VENDOR') ? <section><h4 className="font-semibold text-slate-900">Open purchase orders</h4><div className="mt-2 space-y-2">{(detailsOrdersQuery.data?.data ?? []).filter((order) => order.status !== 'COMPLETED').slice(0, 5).map((order) => <div key={order.id} className="flex justify-between border-b border-slate-100 pb-2"><span>{order.po_number} · {detailsTarget.entity_type === 'VENDOR' ? order.target_site_name : order.vendor_name}</span><span>{Number(order.open_quantity_base_uom).toLocaleString()} open</span></div>)}{!detailsOrdersQuery.isLoading && !(detailsOrdersQuery.data?.data ?? []).some((order) => order.status !== 'COMPLETED') ? <p className="text-slate-500">No open purchase orders.</p> : null}</div></section> : null}
+          {detailsTarget.entity_type === 'INTERNAL_SITE' ? <section><h4 className="font-semibold text-slate-900">Recent movements</h4><div className="mt-2 space-y-2">{detailsTransactionsQuery.data?.data.map((transaction) => <div key={transaction.id} className="flex justify-between border-b border-slate-100 pb-2"><span>{transaction.material_code} · {transaction.transaction_type}</span><span>{Number(transaction.quantity).toLocaleString()} {transaction.quantity_uom}</span></div>)}</div></section> : null}
+          <section><h4 className="font-semibold text-slate-900">Audit timeline</h4><div className="mt-2 space-y-2">{detailsAuditQuery.data?.data.map((event) => <div key={event.id} className="flex justify-between border-b border-slate-100 pb-2"><span>{event.action} · {event.actor_id}</span><time className="text-xs text-slate-500">{new Date(event.created_at).toLocaleString()}</time></div>)}{!detailsAuditQuery.isLoading && detailsAuditQuery.data?.data.length === 0 ? <p className="text-slate-500">No audit events recorded.</p> : null}</div></section>
+        </div>
       </div></div> : null}
 
       {associationTarget ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"><div className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl" role="dialog" aria-modal="true"><div className="flex items-start justify-between"><div><h3 className="text-lg font-semibold text-slate-900">Sites for {associationTarget.name}</h3><p className="mt-1 text-sm text-slate-600">{associationTarget.entity_type === 'VENDOR' ? 'Preferred sites improve defaults but do not restrict vendor use.' : 'People may work across several sites with one primary site.'}</p></div><button type="button" onClick={() => setAssociationTarget(null)} aria-label="Close site associations" className="text-2xl text-slate-500">×</button></div>

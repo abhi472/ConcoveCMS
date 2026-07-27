@@ -59,6 +59,10 @@ Managed resource services:
 - `materialsService`: paginated material CRUD, archive, and restore
 - `entitiesService`: paginated entity CRUD, archive, restore, and site associations
 - `siteMaterialService`: site assignment thresholds, assignment, and safe unassignment
+- `inventoryService`: dashboard aggregates and reusable authoritative balances
+- `purchaseOrdersService`: list/detail/create/idempotent replay/DRAFT edit/status transitions
+- `transactionHistoryService`: successful ledger history and correction lineage
+- `auditService`: immutable master-data audit history
 
 ### 4.3 Sync/write services
 Transactions service currently includes:
@@ -68,7 +72,7 @@ Transactions service currently includes:
 Typed request/response contracts are used for multi-status payload parsing.
 
 The ledger write UI also supports an immutable correction workflow:
-- original successful records are captured in client-side sync history
+- original successful records and correction parent/reason fields are loaded from server history
 - correction actions generate a new compensating transaction instead of editing the original row
 - failed records are stored separately for retry-oriented operator workflows
 
@@ -152,12 +156,16 @@ The dedicated Sync Monitor route separates two operational concerns:
 	- classifies failures into tenant mismatch, validation, or generic sync failure badges
 	- exposes recorded timestamps, local search, and tenant-scoped cache clearing
 
-2. Immutable correction trail
-	- shows tenant-filtered successful ledger writes captured from sync history
+2. Successful ledger and correction history
+	- shows tenant-filtered successful ledger writes from the server-authoritative history endpoint
 	- allows operators to launch a compensating correction draft
 	- preserves original ledger immutability by issuing a new transaction rather than editing history
 	- groups parent and child correction chains for audit review
-	- supports local filtering, search, timestamps, and per-chain collapse/expand behavior
+	- exposes durable parent/reason metadata from V6
+
+3. Master data audit
+	- lists database-atomic material, entity, assignment, and association events
+	- filters by resource and action with server pagination
 
 ## 10. Materials Workflow Rule
 Material input previews lowercase kebab-case normalization, while the backend performs authoritative normalization before persistence.
@@ -194,15 +202,19 @@ Implemented now:
 - Backend enforcement that archived or unassigned master data cannot be used for new inventory writes
 - Persisted purchase-order drafts with atomic line creation, assignment enforcement, tenant-scoped listing, and forward-only status updates
 - Ledger-derived PO fulfillment totals, constrained receipt selection, concurrency-safe open-quantity enforcement, and automatic partial/completed status updates
+- Server-authoritative successful transaction history with tenant isolation, filters, pagination, and extension detail inspection
+- Sync Monitor separation between persisted successes and local failed retry payloads/correction drafts
+- Durable correction lineage (V6), database-triggered master-data audit (V7), and PO request idempotency (V8)
+- Bulk site-material assignment, reusable balance lookups, and transaction-safe insufficient-stock enforcement
+- Persisted DRAFT PO editing with schema-versioned browser recovery
+- Material and entity detail hubs with assignments, balances, POs, movements, audit history, and cross-links
+- Live shell freshness/query state, URL context chips, and explicit `cms-service` actor identity
 
-Planned next:
-- add automated unit/integration tests for tenant and 207 behaviors
-- formalize backend correction metadata handling and lineage display
+Externally blocked/deferred:
+- authenticated user identity, logout, roles, and approval queues require an authentication/session provider; the backend currently records trusted `cms-service`
+- product telemetry requires an approved telemetry provider and data-governance contract
 
-Deployment order for the schema-dependent catalog phase:
-1. Apply backend `V5__entity_management_and_audit.sql` to a non-production database and then production.
-2. Deploy the backend material/entity resource APIs.
-3. Verify resource endpoints through Render and the Vercel proxy.
-4. Deploy the CMS managed catalog pages.
-
-Purchase-order persistence uses the existing V1 tables and requires no new migration. Deploy its backend routes before the CMS Operations changes, then verify `/api/v1/purchase-orders` through Render and the Vercel proxy.
+Deployment order for the remaining local release:
+1. Apply V6, V7, and V8 in order to a non-production PostgreSQL database, then production.
+2. Deploy the backend and verify transactions, audit events, balances, bulk assignments, and purchase-order replay/edit through Render and the Vercel proxy.
+3. Deploy the CMS and run the cross-module smoke flows.

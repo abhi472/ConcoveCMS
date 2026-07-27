@@ -71,6 +71,32 @@ export async function removeSiteMaterialAssignment(params: {
   return response.data.data
 }
 
+export async function bulkUpdateSiteMaterialAssignments(params: {
+  tenantId: string
+  items: Array<{
+    siteId: string
+    materialId: string
+    action: 'ASSIGN' | 'UNASSIGN'
+    lowStockThreshold?: number
+    criticalStockThreshold?: number
+  }>
+}) {
+  const response = await axiosClient.post<{ data: Array<{ action: string; data: SiteMaterialAssignment }> }>(
+    '/inventory/site-materials/bulk',
+    {
+      tenant_id: params.tenantId,
+      items: params.items.map((item) => ({
+        site_id: item.siteId,
+        material_id: item.materialId,
+        action: item.action,
+        low_stock_threshold: item.lowStockThreshold,
+        critical_stock_threshold: item.criticalStockThreshold,
+      })),
+    },
+  )
+  return response.data.data
+}
+
 export function formatAssignmentError(error: unknown) {
   if (!axios.isAxiosError<AssignmentErrorResponse>(error)) {
     return 'The assignment could not be updated.'

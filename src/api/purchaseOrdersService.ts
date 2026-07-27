@@ -22,6 +22,7 @@ export interface ManagedPurchaseOrder extends PurchaseOrder {
 }
 
 export interface PurchaseOrderInput {
+  clientRequestId?: string
   poNumber: string
   vendorId: string
   targetSiteId: string
@@ -46,15 +47,52 @@ interface PurchaseOrderErrorBody {
   message?: string
 }
 
-export async function fetchPurchaseOrders(tenantId: string) {
+export async function fetchPurchaseOrders(tenantId: string, filters?: {
+  siteId?: string
+  vendorId?: string
+  materialId?: string
+  status?: POStatus | 'all'
+}) {
   const response = await axiosClient.get<PurchaseOrderListResponse>('/purchase-orders', {
-    params: { tenant_id: tenantId, status: 'all', page_size: 200 },
+    params: {
+      tenant_id: tenantId,
+      status: filters?.status ?? 'all',
+      site_id: filters?.siteId,
+      vendor_id: filters?.vendorId,
+      material_id: filters?.materialId,
+      page_size: 200,
+    },
   })
   return response.data
 }
 
 export async function createPurchaseOrder(tenantId: string, input: PurchaseOrderInput) {
   const response = await axiosClient.post<PurchaseOrderResponse>('/purchase-orders', {
+    tenant_id: tenantId,
+    client_request_id: input.clientRequestId,
+    po_number: input.poNumber,
+    vendor_id: input.vendorId,
+    target_site_id: input.targetSiteId,
+    expected_delivery_date: input.expectedDeliveryDate,
+    status: 'DRAFT',
+    items: input.items.map((item) => ({
+      material_id: item.materialId,
+      ordered_quantity_base_uom: item.orderedQuantityBaseUom,
+      unit_rate: item.unitRate,
+    })),
+  })
+  return response.data.data
+}
+
+export async function fetchPurchaseOrder(tenantId: string, purchaseOrderId: string) {
+  const response = await axiosClient.get<PurchaseOrderResponse>(`/purchase-orders/${purchaseOrderId}`, {
+    params: { tenant_id: tenantId },
+  })
+  return response.data.data
+}
+
+export async function updatePurchaseOrder(tenantId: string, purchaseOrderId: string, input: PurchaseOrderInput) {
+  const response = await axiosClient.patch<PurchaseOrderResponse>(`/purchase-orders/${purchaseOrderId}`, {
     tenant_id: tenantId,
     po_number: input.poNumber,
     vendor_id: input.vendorId,

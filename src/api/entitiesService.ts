@@ -66,6 +66,7 @@ export async function fetchEntities(params: {
   status?: 'active' | 'archived' | 'all'
   page?: number
   pageSize?: number
+  siteId?: string
 }) {
   const response = await axiosClient.get<EntityListResponse>('/entities', {
     params: {
@@ -75,6 +76,7 @@ export async function fetchEntities(params: {
       status: params.status,
       page: params.page,
       page_size: params.pageSize,
+      site_id: params.siteId,
     },
   })
   return response.data
