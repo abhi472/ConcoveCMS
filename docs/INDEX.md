@@ -37,6 +37,16 @@ Condensed API contract reference:
 
 **When to use:** Implementing API calls, understanding error handling, frontend-backend alignment.
 
+### 4. **usage_info.md** ⭐ USER GUIDE
+Operator-focused application guide including:
+- Step-by-step instructions for every module
+- Operational benefits and safety constraints
+- Common procurement, receipt, retry, and correction workflows
+- Commit-by-commit implementation cross-reference
+- Production release verification record
+
+**When to use:** Training users, running daily inventory workflows, troubleshooting failed operations, or reviewing delivered scope.
+
 ---
 
 ## Redundant/Archived Documentation
@@ -54,8 +64,9 @@ The following files contained overlapping content and have been consolidated:
 
 **New to the project?** Start with:
 1. README.md (overview and setup)
-2. design_doc.md (visual walkthrough)
-3. CMS_ARCHITECTURE.md (how it works)
+2. usage_info.md (operator workflows)
+3. design_doc.md (visual walkthrough)
+4. CMS_ARCHITECTURE.md (how it works)
 
 **Building a feature?** Reference:
 1. CMS_ARCHITECTURE.md (component patterns)
@@ -82,9 +93,9 @@ The following files contained overlapping content and have been consolidated:
 | CMS_ARCHITECTURE.md | ~180 | Core frontend arch & patterns |
 | design_doc.md | ~150 | UI/UX specifications |
 | API_REFERENCE.md | ~100 | API contracts (condensed) |
-| Total | ~430 | (down from 1000+ with consolidated docs) |
+| usage_info.md | ~320 | Operator guide and release record |
 
 ---
 
-**Last Updated:** 2026-07-23  
+**Last Updated:** 2026-07-27
 **Status:** Consolidated and production-ready
