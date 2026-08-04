@@ -39,3 +39,7 @@ export function transactionsQueryKey(tenantId: string, filters?: object) {
 export function auditEventsQueryKey(tenantId: string, filters?: object) {
   return ['audit-events', tenantId, filters ?? {}] as const
 }
+
+export function equipmentQueryKey(tenantId: string, filters?: object) {
+  return ['equipment', tenantId, filters ?? {}] as const
+}

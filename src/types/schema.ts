@@ -87,3 +87,28 @@ export interface InventoryTransaction {
     empty_weight: number
   }
 }
+
+export type EquipmentStatus = 'ACTIVE' | 'IN_MAINTENANCE' | 'INACTIVE'
+
+export interface Equipment {
+  id: string
+  tenant_id: string
+  name: string
+  registration_number: string
+  make: string
+  model: string
+  current_site_id: string | null
+  status: EquipmentStatus
+  created_at?: string
+  updated_at?: string
+}
+
+export interface MaintenanceLog {
+  id: string
+  equipment_id: string
+  breakdown_reason: string
+  action_taken: string | null
+  expected_repair_date: string | null
+  created_at?: string
+  updated_at?: string
+}
