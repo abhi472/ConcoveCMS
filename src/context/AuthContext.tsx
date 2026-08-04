@@ -49,7 +49,13 @@ function AuthProvider({ children }: PropsWithChildren) {
   }, [forceClearSession])
 
   useEffect(() => {
-    void initializeSession()
+    const timerId = window.setTimeout(() => {
+      void initializeSession()
+    }, 0)
+
+    return () => {
+      window.clearTimeout(timerId)
+    }
   }, [initializeSession])
 
   useEffect(() => {
