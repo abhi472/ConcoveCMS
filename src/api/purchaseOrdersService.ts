@@ -126,3 +126,21 @@ export function formatPurchaseOrderError(error: unknown) {
   }
   return error.response?.data?.message ?? 'The purchase order could not be saved.'
 }
+
+export interface BulkApprovePurchaseOrderResult {
+  purchase_order_id: string
+  sync_status: 'SYNCED' | 'FAILED'
+  message?: string
+}
+
+interface BulkApprovePurchaseOrderResponse {
+  results: BulkApprovePurchaseOrderResult[]
+}
+
+export async function bulkApprovePurchaseOrders(tenantId: string, purchaseOrderIds: string[]) {
+  const response = await axiosClient.patch<BulkApprovePurchaseOrderResponse>('/purchase-orders/bulk-approve', {
+    tenant_id: tenantId,
+    po_ids: purchaseOrderIds,
+  })
+  return response.data
+}

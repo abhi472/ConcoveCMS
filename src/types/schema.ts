@@ -4,6 +4,16 @@ export type EntityType = 'VENDOR' | 'INTERNAL_SITE' | 'SUBCONTRACTOR' | 'EMPLOYE
 
 export type POStatus = 'DRAFT' | 'APPROVED' | 'PARTIALLY_FULFILLED' | 'COMPLETED'
 
+export type POApprovalStatus =
+  | 'DRAFT'
+  | 'PENDING_APPROVAL'
+  | 'APPROVED'
+  | 'PARTIAL_RECEIPT'
+  | 'FULFILLED'
+  | 'CANCELLED'
+
+export type POLineStatus = 'PENDING' | 'APPROVED' | 'RECEIVED' | 'BACKORDERED' | 'CANCELLED'
+
 export type TransactionType = 'INWARD' | 'OUTWARD' | 'IST_DISPATCH' | 'IST_RECEIPT'
 
 export interface Material {
@@ -45,6 +55,8 @@ export interface POItem {
   material_id: string
   ordered_quantity_base_uom: number
   unit_rate: number
+  line_status?: POLineStatus
+  received_quantity?: number
 }
 
 export interface PurchaseOrder {
@@ -53,6 +65,10 @@ export interface PurchaseOrder {
   vendor_id: string
   target_site_id: string
   status: POStatus
+  po_status?: POApprovalStatus
+  approved_by?: string | null
+  approved_at?: string | null
+  rejection_reason?: string | null
   expected_delivery_date: string | null
   vendor_name?: string
   target_site_name?: string
@@ -109,6 +125,39 @@ export interface MaintenanceLog {
   breakdown_reason: string
   action_taken: string | null
   expected_repair_date: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export type SiteTransferStatus =
+  | 'DRAFT'
+  | 'DISPATCHED'
+  | 'PARTIAL_RECEIVED'
+  | 'RECONCILED'
+  | 'CANCELLED'
+
+export interface SiteTransferLine {
+  id?: string
+  transfer_id?: string
+  material_id: string
+  quantity_dispatched: number
+  quantity_received?: number
+  discrepancy_reason?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface SiteTransfer {
+  id: string
+  tenant_id: string
+  source_site_id: string
+  destination_site_id: string
+  transfer_status: SiteTransferStatus
+  dispatched_at?: string | null
+  received_at?: string | null
+  source_site_name?: string
+  destination_site_name?: string
+  lines?: SiteTransferLine[]
   created_at?: string
   updated_at?: string
 }

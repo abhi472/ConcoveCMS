@@ -43,3 +43,11 @@ export function auditEventsQueryKey(tenantId: string, filters?: object) {
 export function equipmentQueryKey(tenantId: string, filters?: object) {
   return ['equipment', tenantId, filters ?? {}] as const
 }
+
+export function siteTransfersQueryKey(tenantId: string, filters?: object) {
+  return ['site-transfers', tenantId, filters ?? {}] as const
+}
+
+export function siteTransferQueryKey(tenantId: string, siteTransferId?: string | null) {
+  return ['site-transfer', tenantId, siteTransferId ?? null] as const
+}
