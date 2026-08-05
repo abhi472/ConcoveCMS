@@ -12,10 +12,12 @@ import {
   fetchEntities,
   fetchEntitySites,
   formatEntityError,
+  importEntitiesCsv,
   removeEntitySite,
   restoreEntity,
   saveEntitySite,
   updateEntity,
+  type CsvImportResponse,
   type EntityInput,
   type ManagedEntity,
 } from '../api/entitiesService'
@@ -100,6 +102,18 @@ function profileSummary(entity: ManagedEntity) {
   return entity.specialty || entity.registration_number || 'Subcontractor profile'
 }
 
+function downloadCsvTemplate(filename: string, content: string) {
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  URL.revokeObjectURL(url)
+}
+
 function EntitiesPage() {
   const queryClient = useQueryClient()
   const { user } = useAuthContext()
@@ -117,6 +131,8 @@ function EntitiesPage() {
   const [associationTarget, setAssociationTarget] = useState<ManagedEntity | null>(null)
   const [detailsTarget, setDetailsTarget] = useState<ManagedEntity | null>(null)
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
+  const [selectedCsvFile, setSelectedCsvFile] = useState<File | null>(null)
+  const [csvImportResult, setCsvImportResult] = useState<CsvImportResponse | null>(null)
 
   const filters = { search: deferredSearch, entityType, status, page, pageSize: 50 }
   const entitiesQuery = useQuery({
@@ -260,11 +276,51 @@ function EntitiesPage() {
     onError: (error) => setFeedback({ kind: 'error', message: formatEntityError(error) }),
   })
 
+  const importCsvMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedCsvFile) throw new Error('Select a CSV file before importing.')
+      const csvContent = await selectedCsvFile.text()
+      return importEntitiesCsv({
+        tenantId: selectedTenantId,
+        csvContent,
+        defaultEntityType: entityType,
+      })
+    },
+    onSuccess: async (response) => {
+      setCsvImportResult(response)
+      const successCount = response.results.filter((row) => row.sync_status === 'SUCCESS').length
+      const failureCount = response.results.length - successCount
+      setFeedback({
+        kind: failureCount > 0 ? 'error' : 'success',
+        message: failureCount > 0
+          ? `Entity CSV imported ${successCount} rows with ${failureCount} failures.`
+          : `Entity CSV imported successfully (${successCount} rows).`,
+      })
+      await invalidateEntityData()
+    },
+    onError: (error) => setFeedback({ kind: 'error', message: formatEntityError(error) }),
+  })
+
   const entities = entitiesQuery.data?.data ?? []
   const canManageEntities = Boolean(user && hasRequiredRole(user.role, ['ADMIN', 'SITE_MANAGER']))
   const total = entitiesQuery.data?.pagination.total ?? 0
   const pageCount = Math.max(1, Math.ceil(total / 50))
   const associations = associationsQuery.data ?? []
+
+  const handleDownloadEntityTemplate = () => {
+    const headers = 'entity_type,name,location_code,address,manager_name,capacity_notes,contact_name,phone,gst_number,employee_code,designation,specialty,registration_number'
+
+    const sampleByType: Record<EntityType, string> = {
+      INTERNAL_SITE: 'INTERNAL_SITE,Main Site,SITE-001,Industrial Area,Ravi Kumar,12000 sq ft,,,,,,,' ,
+      VENDOR: 'VENDOR,Shakti Suppliers,,Market Road,,,Rajesh,+919999999999,GSTIN12345,,,,',
+      EMPLOYEE: 'EMPLOYEE,Aman Verma,,,,,,+919888888888,,EMP-1001,Operator,,',
+      SUBCONTRACTOR: 'SUBCONTRACTOR,BuildPro Services,,Sector 10,,,Vikas,+919777777777,,,,Masonry,REG-7788',
+    }
+
+    const sampleRow = sampleByType[entityType]
+    const filename = `${entityType.toLowerCase()}_template.csv`
+    downloadCsvTemplate(filename, `${headers}\n${sampleRow}\n`)
+  }
 
   return (
     <section className="space-y-4">
@@ -280,6 +336,39 @@ function EntitiesPage() {
       </header>
 
       {!canManageEntities ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Your role has read-only access for entity records and site relationships.</p> : null}
+
+      <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+        <h3 className="text-sm font-semibold text-slate-900">Bulk CSV Upload</h3>
+        <p className="mt-1 text-xs text-slate-600">
+          Upload {entityTypes.find((item) => item.value === entityType)?.label.toLowerCase()} with headers: name, location_code, address, manager_name, capacity_notes, contact_name, phone, gst_number, employee_code, designation, specialty, registration_number. Optional: entity_type.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(event) => setSelectedCsvFile(event.target.files?.[0] ?? null)}
+            className="block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+          />
+          <button
+            type="button"
+            onClick={handleDownloadEntityTemplate}
+            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700"
+          >
+            Download Template
+          </button>
+          <button
+            type="button"
+            disabled={!canManageEntities || !selectedCsvFile || importCsvMutation.isPending}
+            onClick={() => importCsvMutation.mutate()}
+            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-50"
+          >
+            {importCsvMutation.isPending ? 'Importing...' : 'Import Entities CSV'}
+          </button>
+          {selectedCsvFile ? <span className="text-xs text-slate-500">{selectedCsvFile.name}</span> : null}
+        </div>
+        <p className="mt-2 text-xs text-slate-500">Template file: {entityType.toLowerCase()}_template.csv</p>
+        {csvImportResult ? <div className="mt-3 max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white"><table className="min-w-full divide-y divide-slate-200 text-xs"><thead className="bg-slate-50"><tr><th className="px-2 py-1.5 text-left">Row</th><th className="px-2 py-1.5 text-left">Reference</th><th className="px-2 py-1.5 text-left">Status</th><th className="px-2 py-1.5 text-left">Message</th></tr></thead><tbody className="divide-y divide-slate-100">{csvImportResult.results.map((row) => <tr key={`${row.row_number}-${row.reference}`}><td className="px-2 py-1.5">{row.row_number}</td><td className="px-2 py-1.5">{row.reference}</td><td className="px-2 py-1.5">{row.sync_status}</td><td className="px-2 py-1.5">{row.message}</td></tr>)}</tbody></table></div> : null}
+      </div>
 
       <div className="border-b border-slate-200">
         <div className="flex overflow-x-auto">

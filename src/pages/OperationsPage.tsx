@@ -8,6 +8,7 @@ import { fetchEntities } from '../api/entitiesService'
 import { useEquipment } from '../api/equipmentQueries'
 import {
   createFluidDispense,
+  syncTransactionsCsv,
   syncTransactionsBatch,
 } from '../api/transactionsService'
 import { fetchMasterData } from '../api/masterDataService'
@@ -344,6 +345,7 @@ function OperationsPage() {
   const [fluidResult, setFluidResult] = useState<FluidDispenseResponse | null>(null)
   const [batchError, setBatchError] = useState('')
   const [fluidError, setFluidError] = useState('')
+  const [selectedCsvFile, setSelectedCsvFile] = useState<File | null>(null)
   const [ledgerError, setLedgerError] = useState(() => {
     if (!initialLedgerRequest || initialLedgerRequest.transaction) {
       return ''
@@ -841,6 +843,61 @@ function OperationsPage() {
       )
     } finally {
       setIsSubmittingFluid(false)
+    }
+  }
+
+  const handleCsvBatchSync = async () => {
+    setBatchError('')
+    setBatchResult(null)
+    setLedgerError('')
+    setOperationNotice(null)
+
+    if (!canRunLedgerMutations) {
+      setLedgerError('Your role has read-only access for ledger submissions.')
+      return
+    }
+
+    if (!selectedCsvFile) {
+      setLedgerError('Select a CSV file before submitting.')
+      return
+    }
+
+    setIsSubmittingBatch(true)
+
+    try {
+      const csvContent = await selectedCsvFile.text()
+      const response = await syncTransactionsCsv(csvContent)
+      setBatchResult(response)
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['transactions', selectedTenantId] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory-balances', selectedTenantId] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory-dashboard', selectedTenantId] }),
+      ])
+
+      const successCount = response.results.filter((row) => row.sync_status === 'SUCCESS').length
+      const failureCount = response.results.length - successCount
+
+      if (failureCount > 0) {
+        setOperationNotice({
+          tone: 'warning',
+          message: `CSV import finished with ${successCount} success and ${failureCount} failure. Review Sync Status for row-level details.`,
+        })
+      } else {
+        setOperationNotice({
+          tone: 'success',
+          message: `CSV import completed successfully for ${selectedTenantName}.`,
+        })
+      }
+    } catch (error) {
+      setBatchError(
+        formatApiError(
+          error,
+          'CSV upload failed before reaching multi-status processing.',
+        ),
+      )
+    } finally {
+      setIsSubmittingBatch(false)
     }
   }
 
@@ -1615,6 +1672,32 @@ function OperationsPage() {
             <p className="text-xs text-slate-500">
               client_transaction_id is generated immediately before the write request.
             </p>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <h4 className="text-sm font-semibold text-slate-900">Bulk CSV Upload</h4>
+            <p className="mt-1 text-xs text-slate-600">
+              Upload a CSV with headers: client_transaction_id (optional), site_id, material_id, po_id, transaction_type, quantity, source_entity_id, destination_entity_id, transaction_date, correction_of_transaction_id, correction_reason, commercial_invoice_no, commercial_base_rate, commercial_gst_tier, commercial_transport_charges, volumetric_length, volumetric_breadth, volumetric_height, volumetric_loaded_weight, volumetric_empty_weight.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(event) => setSelectedCsvFile(event.target.files?.[0] ?? null)}
+                className="block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white"
+              />
+              <button
+                type="button"
+                onClick={handleCsvBatchSync}
+                disabled={!canRunLedgerMutations || isSubmittingBatch || !selectedCsvFile}
+                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+              >
+                {isSubmittingBatch ? 'Uploading CSV...' : 'Upload CSV to Ledger'}
+              </button>
+              {selectedCsvFile ? (
+                <span className="text-xs text-slate-500">{selectedCsvFile.name}</span>
+              ) : null}
+            </div>
           </div>
 
           {ledgerError ? (
