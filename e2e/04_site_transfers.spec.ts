@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { installSafetyNetMocks, mockMasterData, mockSiteTransfers } from './support/api-mocks'
+import { bootstrapAuthenticatedSession, installSafetyNetMocks, mockMasterData, mockSiteTransfers } from './support/api-mocks'
 import { MATERIAL_CEMENT, SITE_ALPHA, SITE_BETA } from './support/fixtures'
 
 const TRANSFER_ALPHA_TO_BETA = {
@@ -27,6 +27,7 @@ const TRANSFER_ALPHA_TO_BETA = {
 
 test.describe('Site-to-site (IST) transfer workspace', () => {
   test.beforeEach(async ({ page }) => {
+    await bootstrapAuthenticatedSession(page)
     await installSafetyNetMocks(page)
     await mockMasterData(page, {
       materials: [MATERIAL_CEMENT],

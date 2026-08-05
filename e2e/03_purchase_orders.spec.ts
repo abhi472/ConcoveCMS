@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { installSafetyNetMocks, mockMasterData, mockPurchaseOrders } from './support/api-mocks'
+import { bootstrapAuthenticatedSession, installSafetyNetMocks, mockMasterData, mockPurchaseOrders } from './support/api-mocks'
 import { SITE_ALPHA, VENDOR_ACME } from './support/fixtures'
 
 const PO_PENDING = {
@@ -45,6 +45,7 @@ const PURCHASE_ORDERS = [PO_PENDING, PO_DRAFT, PO_APPROVED]
 
 test.describe('Purchase order approval workflows', () => {
   test.beforeEach(async ({ page }) => {
+    await bootstrapAuthenticatedSession(page)
     await installSafetyNetMocks(page)
     await mockMasterData(page, {
       materials: [],
