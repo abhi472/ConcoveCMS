@@ -5,6 +5,7 @@ import { formatApiError } from '../api/errorUtils'
 import { entitiesQueryKey, inventoryBalancesQueryKey, masterDataQueryKey, purchaseOrdersQueryKey } from '../api/queryKeys'
 import { fetchInventoryBalances } from '../api/inventoryService'
 import { fetchEntities } from '../api/entitiesService'
+import { useEquipment } from '../api/equipmentQueries'
 import {
   createFluidDispense,
   syncTransactionsBatch,
@@ -245,10 +246,6 @@ function OperationsPage() {
     () => entities.filter((entity) => entity.entity_type === 'VENDOR'),
     [entities],
   )
-  const nonSiteEntities = useMemo(
-    () => entities.filter((entity) => entity.entity_type !== 'INTERNAL_SITE'),
-    [entities],
-  )
 
   const [activeSection, setActiveSection] = useState<'procurement' | 'ledger' | 'sync'>(() =>
     searchParams.get('mode') === 'ledger' || initialLedgerRequest
@@ -326,6 +323,12 @@ function OperationsPage() {
   const operationalEntities = operationalEntitiesQuery.data?.data ?? entities
   const operationalVendors = operationalEntities.filter((entity) => entity.entity_type === 'VENDOR')
   const operationalNonSiteEntities = operationalEntities.filter((entity) => entity.entity_type !== 'INTERNAL_SITE')
+  const fluidEquipmentQuery = useEquipment({
+    tenantId: selectedTenantId,
+    siteId: ledgerForm.site_id,
+    status: 'ACTIVE',
+  })
+  const fluidEquipmentOptions = fluidEquipmentQuery.data?.data ?? []
   const selectedBalance = balanceQuery.data?.data[0]
   const outboundQuantityExceedsBalance = (
     ledgerForm.transaction_type === 'OUTWARD' || ledgerForm.transaction_type === 'IST_DISPATCH'
@@ -361,6 +364,7 @@ function OperationsPage() {
   )
   const [isSubmittingBatch, setIsSubmittingBatch] = useState(false)
   const [isSubmittingFluid, setIsSubmittingFluid] = useState(false)
+  const [fluidVehicleEquipmentId, setFluidVehicleEquipmentId] = useState('')
   const [submissionContext, setSubmissionContext] = useState<SubmissionContext>(
     initialLedgerRequest?.transaction ? initialLedgerRequest.context : 'standard',
   )
@@ -763,7 +767,7 @@ function OperationsPage() {
       const response = await createFluidDispense({
         client_transaction_id: crypto.randomUUID(),
         site_id: ledgerForm.site_id || sites[0]?.id || '',
-        vehicle_id: ledgerForm.destination_entity_id || nonSiteEntities[0]?.id || '',
+        vehicle_id: fluidVehicleEquipmentId || fluidEquipmentOptions[0]?.id || '',
         material_id: ledgerForm.material_id || materials[0]?.id || '',
         dispense_quantity: Math.max(0.01, toNumber(ledgerForm.quantity) || 1),
         logged_at: ledgerForm.transaction_date,
@@ -1469,6 +1473,25 @@ function OperationsPage() {
               </div>
             ) : null}
           </div>
+
+          <label className="block max-w-sm space-y-0.5 text-sm font-medium text-slate-700">
+            <span>Vehicle / Equipment (Fluid Dispense)</span>
+            <select
+              value={fluidVehicleEquipmentId}
+              onChange={(event) => setFluidVehicleEquipmentId(event.target.value)}
+              className="w-full rounded-md border border-slate-300 px-3 py-2"
+            >
+              <option value="">Select active equipment</option>
+              {fluidEquipmentOptions.map((equipment) => (
+                <option key={equipment.id} value={equipment.id}>
+                  {equipment.name} · {equipment.registration_number}
+                </option>
+              ))}
+            </select>
+            {ledgerForm.site_id && !fluidEquipmentQuery.isLoading && fluidEquipmentOptions.length === 0 ? (
+              <p className="text-xs text-slate-500">No active equipment assigned to this site.</p>
+            ) : null}
+          </label>
 
           <div className="flex flex-wrap items-center gap-3">
             <button
