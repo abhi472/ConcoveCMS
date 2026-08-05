@@ -20,6 +20,7 @@ function Layout() {
     '/materials': 'Materials / Catalog',
     '/site-materials': 'Materials / Site assignments',
     '/entities': 'Entities / Directory',
+    '/equipment': 'Equipment / Registry',
     '/operations': 'Operations',
     '/sync-monitor': 'Sync Monitor',
   }

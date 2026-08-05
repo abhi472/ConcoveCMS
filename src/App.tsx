@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import EntitiesPage from './pages/EntitiesPage'
+import EquipmentPage from './pages/EquipmentPage'
 import MaterialsPage from './pages/MaterialsPage'
 import OperationsPage from './pages/OperationsPage'
 import SyncMonitorPage from './pages/SyncMonitorPage'
@@ -15,6 +16,7 @@ function App() {
         <Route path="materials" element={<MaterialsPage />} />
         <Route path="site-materials" element={<SiteMaterialsPage />} />
         <Route path="entities" element={<EntitiesPage />} />
+        <Route path="equipment" element={<EquipmentPage />} />
         <Route path="operations" element={<OperationsPage />} />
         <Route path="sync-monitor" element={<SyncMonitorPage />} />
       </Route>

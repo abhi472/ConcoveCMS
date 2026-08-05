@@ -64,6 +64,18 @@ function Sidebar() {
           Entities
         </NavLink>
         <NavLink
+          to="/equipment"
+          className={({ isActive }) =>
+            `${baseLinkStyles} ${
+              isActive
+                ? 'bg-amber-500 text-slate-900 font-semibold shadow-sm'
+                : 'text-slate-200 hover:bg-slate-700 hover:text-white'
+            }`
+          }
+        >
+          Equipment
+        </NavLink>
+        <NavLink
           to="/operations"
           className={({ isActive }) =>
             `${baseLinkStyles} ${
