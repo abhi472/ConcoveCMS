@@ -19,7 +19,9 @@ import {
   updatePurchaseOrderStatus,
   updatePurchaseOrder,
 } from '../api/purchaseOrdersService'
+import { useBulkApprovePOs } from '../api/purchaseOrderQueries'
 import POProgressTracker from '../components/POProgressTracker'
+import { POStatusBadge } from '../components/POStatusBadge'
 import type {
   BatchSyncResponse,
   FluidDispenseResponse,
@@ -28,6 +30,7 @@ import { useSyncRetryContext } from '../context/useSyncRetryContext'
 import { useTenantContext } from '../context/useTenantContext'
 import type {
   InventoryTransaction,
+  POApprovalStatus,
   POItem,
   POStatus,
   TransactionType,
@@ -273,6 +276,7 @@ function OperationsPage() {
     },
   ])
   const [statusDrafts, setStatusDrafts] = useState<Record<string, POStatus>>({})
+  const [selectedPoIds, setSelectedPoIds] = useState<string[]>([])
   const [procurementFeedback, setProcurementFeedback] = useState<{
     kind: 'success' | 'error'
     message: string
@@ -390,6 +394,9 @@ function OperationsPage() {
     (order.status === 'APPROVED' || order.status === 'PARTIALLY_FULFILLED') &&
     (!ledgerForm.site_id || order.target_site_id === ledgerForm.site_id),
   )
+  const selectablePoIds = activeOrders
+    .filter((order) => (order.po_status ?? 'DRAFT') === 'PENDING_APPROVAL')
+    .map((order) => order.id)
 
   const procurementPreview = lineItems.map((item) => ({
     ...item,
@@ -558,6 +565,31 @@ function OperationsPage() {
       setProcurementFeedback({ kind: 'error', message: formatPurchaseOrderError(error) })
     },
   })
+
+  const bulkApproveMutation = useBulkApprovePOs(selectedTenantId)
+
+  const handleApproveSelectedPos = async () => {
+    const purchaseOrderIds = selectedPoIds
+    if (purchaseOrderIds.length === 0) return
+    try {
+      const response = await bulkApproveMutation.mutateAsync(purchaseOrderIds)
+      const successCount = response.results.filter((row) => row.sync_status === 'SYNCED').length
+      const failureCount = response.results.length - successCount
+      setSelectedPoIds((current) =>
+        current.filter((id) =>
+          response.results.some((row) => row.purchase_order_id === id && row.sync_status === 'FAILED'),
+        ),
+      )
+      setProcurementFeedback({
+        kind: failureCount > 0 ? 'error' : 'success',
+        message: failureCount > 0
+          ? `Approved ${successCount} of ${response.results.length} purchase orders. ${failureCount} failed — review statuses and retry.`
+          : `Approved ${successCount} purchase order${successCount === 1 ? '' : 's'}.`,
+      })
+    } catch (error) {
+      setProcurementFeedback({ kind: 'error', message: formatPurchaseOrderError(error) })
+    }
+  }
 
   const handleProcurementSave = () => {
     setProcurementFeedback(null)
@@ -1038,16 +1070,44 @@ function OperationsPage() {
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-100">
                     <tr>
+                      <th className="px-3 py-2 text-left">
+                        <input
+                          type="checkbox"
+                          aria-label="Select all pending-approval purchase orders"
+                          checked={selectablePoIds.length > 0 && selectablePoIds.every((id) => selectedPoIds.includes(id))}
+                          disabled={selectablePoIds.length === 0}
+                          onChange={(event) => setSelectedPoIds(event.target.checked ? selectablePoIds : [])}
+                        />
+                      </th>
                       <th className="px-3 py-2 text-left">PO</th>
                       <th className="px-3 py-2 text-left">Vendor / Site</th>
                       <th className="px-3 py-2 text-left">Fulfillment</th>
                       <th className="px-3 py-2 text-left">Status</th>
+                      <th className="px-3 py-2 text-left">PO Status</th>
                       <th className="px-3 py-2 text-left">Status Update</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {activeOrders.map((order) => (
+                    {activeOrders.map((order) => {
+                      const poApprovalStatus: POApprovalStatus = order.po_status ?? 'DRAFT'
+                      const isSelectable = poApprovalStatus === 'PENDING_APPROVAL'
+                      return (
                       <tr key={order.id}>
+                        <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${order.po_number} for bulk approval`}
+                            checked={selectedPoIds.includes(order.id)}
+                            disabled={!isSelectable}
+                            onChange={(event) =>
+                              setSelectedPoIds((current) =>
+                                event.target.checked
+                                  ? [...current, order.id]
+                                  : current.filter((id) => id !== order.id),
+                              )
+                            }
+                          />
+                        </td>
                         <td className="px-3 py-2 font-medium text-slate-900">{order.po_number}</td>
                         <td className="px-3 py-2 text-slate-700">
                           <p>{order.vendor_name}</p>
@@ -1079,6 +1139,9 @@ function OperationsPage() {
                           </div>
                         </td>
                         <td className="px-3 py-2 text-slate-700">{order.status}</td>
+                        <td className="px-3 py-2">
+                          <POStatusBadge status={poApprovalStatus} />
+                        </td>
                         <td className="px-3 py-2">
                           <div className="flex min-w-64 gap-2">
                             {order.status === 'DRAFT' ? (
@@ -1120,10 +1183,11 @@ function OperationsPage() {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                     {activeOrders.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-3 py-4 text-center text-slate-600">
+                        <td colSpan={7} className="px-3 py-4 text-center text-slate-600">
                           {purchaseOrdersLoading
                             ? 'Loading purchase orders...'
                             : 'No active orders found for the selected tenant.'}
@@ -1634,6 +1698,30 @@ function OperationsPage() {
                 <p className="mt-2 text-sm text-slate-600">No fluid dispense run yet.</p>
               )}
             </div>
+          </div>
+        </div>
+      ) : null}
+      {selectedPoIds.length > 0 ? (
+        <div className="fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+          <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-lg">
+            <span className="text-sm font-medium text-slate-700">
+              {selectedPoIds.length} purchase order{selectedPoIds.length === 1 ? '' : 's'} selected
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedPoIds([])}
+              className="text-xs font-medium text-slate-500 hover:text-slate-700"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={handleApproveSelectedPos}
+              disabled={bulkApproveMutation.isPending}
+              className="rounded-full bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {bulkApproveMutation.isPending ? 'Approving...' : 'Approve Selected'}
+            </button>
           </div>
         </div>
       ) : null}

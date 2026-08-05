@@ -88,6 +88,18 @@ function Sidebar() {
           Operations
         </NavLink>
         <NavLink
+          to="/site-transfers"
+          className={({ isActive }) =>
+            `${baseLinkStyles} ${
+              isActive
+                ? 'bg-amber-500 text-slate-900 font-semibold shadow-sm'
+                : 'text-slate-200 hover:bg-slate-700 hover:text-white'
+            }`
+          }
+        >
+          Site Transfers
+        </NavLink>
+        <NavLink
           to="/sync-monitor"
           className={({ isActive }) =>
             `${baseLinkStyles} ${

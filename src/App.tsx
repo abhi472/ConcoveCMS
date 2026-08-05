@@ -7,6 +7,7 @@ import MaterialsPage from './pages/MaterialsPage'
 import OperationsPage from './pages/OperationsPage'
 import SyncMonitorPage from './pages/SyncMonitorPage'
 import SiteMaterialsPage from './pages/SiteMaterialsPage'
+import SiteTransfersPage from './pages/SiteTransfersPage'
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
         <Route path="entities" element={<EntitiesPage />} />
         <Route path="equipment" element={<EquipmentPage />} />
         <Route path="operations" element={<OperationsPage />} />
+        <Route path="site-transfers" element={<SiteTransfersPage />} />
         <Route path="sync-monitor" element={<SyncMonitorPage />} />
       </Route>
     </Routes>
