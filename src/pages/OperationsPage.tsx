@@ -26,8 +26,10 @@ import type {
   BatchSyncResponse,
   FluidDispenseResponse,
 } from '../api/syncContracts'
+import { useAuthContext } from '../context/useAuthContext'
 import { useSyncRetryContext } from '../context/useSyncRetryContext'
 import { useTenantContext } from '../context/useTenantContext'
+import { hasRequiredRole } from '../types/rbac'
 import type {
   InventoryTransaction,
   POApprovalStatus,
@@ -198,6 +200,7 @@ function createLedgerFormFromTransaction(
 }
 
 function OperationsPage() {
+  const { user } = useAuthContext()
   const { selectedTenantId, selectedTenantName } = useTenantContext()
   const queryClient = useQueryClient()
   const {
@@ -397,6 +400,9 @@ function OperationsPage() {
   const selectablePoIds = activeOrders
     .filter((order) => (order.po_status ?? 'DRAFT') === 'PENDING_APPROVAL')
     .map((order) => order.id)
+  const canManageProcurementDrafts = Boolean(user && hasRequiredRole(user.role, ['ADMIN', 'SITE_MANAGER', 'OPERATOR']))
+  const canManageProcurementApprovals = Boolean(user && hasRequiredRole(user.role, ['ADMIN', 'SITE_MANAGER']))
+  const canRunLedgerMutations = Boolean(user && hasRequiredRole(user.role, ['ADMIN', 'SITE_MANAGER', 'OPERATOR']))
 
   const procurementPreview = lineItems.map((item) => ({
     ...item,
@@ -569,6 +575,10 @@ function OperationsPage() {
   const bulkApproveMutation = useBulkApprovePOs(selectedTenantId)
 
   const handleApproveSelectedPos = async () => {
+    if (!canManageProcurementApprovals) {
+      setProcurementFeedback({ kind: 'error', message: 'Your role cannot approve purchase orders.' })
+      return
+    }
     const purchaseOrderIds = selectedPoIds
     if (purchaseOrderIds.length === 0) return
     try {
@@ -593,6 +603,10 @@ function OperationsPage() {
 
   const handleProcurementSave = () => {
     setProcurementFeedback(null)
+    if (!canManageProcurementDrafts) {
+      setProcurementFeedback({ kind: 'error', message: 'Your role has read-only access for purchase order drafts.' })
+      return
+    }
     if (!procurementDraft.po_number.trim() || !procurementDraft.vendor_id || !procurementDraft.target_site_id) {
       setProcurementFeedback({
         kind: 'error',
@@ -619,6 +633,12 @@ function OperationsPage() {
     setBatchResult(null)
     setLedgerError('')
     setOperationNotice(null)
+
+    if (!canRunLedgerMutations) {
+      setLedgerError('Your role has read-only access for ledger submissions.')
+      return
+    }
+
     setIsSubmittingBatch(true)
 
     if (!ledgerForm.site_id || !ledgerForm.material_id) {
@@ -793,6 +813,12 @@ function OperationsPage() {
   const handleFluidDispense = async () => {
     setFluidError('')
     setFluidResult(null)
+
+    if (!canRunLedgerMutations) {
+      setFluidError('Your role has read-only access for fluid dispense operations.')
+      return
+    }
+
     setIsSubmittingFluid(true)
 
     try {
@@ -858,6 +884,7 @@ function OperationsPage() {
             <p className="text-sm text-slate-600">
               Create tenant purchase orders and advance them through their fulfillment lifecycle.
             </p>
+            {!canManageProcurementDrafts ? <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Your role has read-only access for procurement drafts.</p> : null}
             {editingPurchaseOrderId ? <p className="mt-2 text-xs font-semibold text-amber-700">Editing persisted DRAFT order. Saving replaces its header and lines atomically.</p> : null}
             {procurementRecovery ? <p className="mt-2 text-xs text-slate-500">Recovered an unsaved procurement draft from this browser.</p> : null}
             {procurementFeedback ? (
@@ -875,11 +902,12 @@ function OperationsPage() {
             <label className="space-y-0.5 text-sm font-medium text-slate-700">
               <span>PO Number</span>
               <input
+                disabled={!canManageProcurementDrafts}
                 value={procurementDraft.po_number}
                 onChange={(event) =>
                   setProcurementDraft((current) => ({ ...current, po_number: event.target.value }))
                 }
-                className="w-full rounded-md border border-slate-300 px-3 py-1"
+                className="w-full rounded-md border border-slate-300 px-3 py-1 disabled:bg-slate-100"
                 placeholder="PO-001"
               />
             </label>
@@ -894,11 +922,12 @@ function OperationsPage() {
             <label className="space-y-0.5 text-sm font-medium text-slate-700">
               <span>Vendor</span>
               <select
+                disabled={!canManageProcurementDrafts}
                 value={procurementDraft.vendor_id}
                 onChange={(event) =>
                   setProcurementDraft((current) => ({ ...current, vendor_id: event.target.value }))
                 }
-                className="w-full rounded-md border border-slate-300 px-3 py-2"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:bg-slate-100"
               >
                 <option value="">Select vendor</option>
                 {vendors.map((vendor) => (
@@ -912,6 +941,7 @@ function OperationsPage() {
             <label className="space-y-0.5 text-sm font-medium text-slate-700">
               <span>Target Site</span>
               <select
+                disabled={!canManageProcurementDrafts}
                 value={procurementDraft.target_site_id}
                 onChange={(event) =>
                   setProcurementDraft((current) => ({
@@ -919,7 +949,7 @@ function OperationsPage() {
                     target_site_id: event.target.value,
                   }))
                 }
-                className="w-full rounded-md border border-slate-300 px-3 py-2"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:bg-slate-100"
               >
                 <option value="">Select site</option>
                 {sites.map((site) => (
@@ -934,6 +964,7 @@ function OperationsPage() {
               <span>Expected Delivery Date</span>
               <input
                 type="date"
+                disabled={!canManageProcurementDrafts}
                 value={procurementDraft.expected_delivery_date}
                 onChange={(event) =>
                   setProcurementDraft((current) => ({
@@ -941,7 +972,7 @@ function OperationsPage() {
                     expected_delivery_date: event.target.value,
                   }))
                 }
-                className="w-full rounded-md border border-slate-300 px-3 py-2"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:bg-slate-100"
               />
             </label>
           </div>
@@ -956,8 +987,9 @@ function OperationsPage() {
               <h4 className="text-sm font-semibold text-slate-900">PO Items</h4>
               <button
                 type="button"
+                disabled={!canManageProcurementDrafts}
                 onClick={handleAddLineItem}
-                className="rounded-md bg-slate-900 px-3 py-2 text-xs font-medium text-white"
+                className="rounded-md bg-slate-900 px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Add Line Item
               </button>
@@ -969,6 +1001,7 @@ function OperationsPage() {
                   <label className="space-y-0.5 text-sm font-medium text-slate-700 md:col-span-2">
                     <span>Material</span>
                     <select
+                      disabled={!canManageProcurementDrafts}
                       value={item.material_id}
                       onChange={(event) =>
                         setLineItems((current) =>
@@ -979,7 +1012,7 @@ function OperationsPage() {
                           ),
                         )
                       }
-                      className="w-full rounded-md border border-slate-300 px-3 py-2"
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:bg-slate-100"
                     >
                       <option value="">Select material</option>
                       {materials.map((material) => (
@@ -995,6 +1028,7 @@ function OperationsPage() {
                     <input
                       type="number"
                       step="0.000001"
+                      disabled={!canManageProcurementDrafts}
                       value={item.ordered_quantity_base_uom}
                       onChange={(event) =>
                         setLineItems((current) =>
@@ -1008,7 +1042,7 @@ function OperationsPage() {
                           ),
                         )
                       }
-                      className="w-full rounded-md border border-slate-300 px-3 py-2"
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:bg-slate-100"
                     />
                   </label>
 
@@ -1017,6 +1051,7 @@ function OperationsPage() {
                     <input
                       type="number"
                       step="0.000001"
+                      disabled={!canManageProcurementDrafts}
                       value={item.unit_rate}
                       onChange={(event) =>
                         setLineItems((current) =>
@@ -1027,7 +1062,7 @@ function OperationsPage() {
                           ),
                         )
                       }
-                      className="w-full rounded-md border border-slate-300 px-3 py-2"
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:bg-slate-100"
                     />
                   </label>
 
@@ -1037,7 +1072,7 @@ function OperationsPage() {
                       onClick={() =>
                         setLineItems((current) => current.filter((lineItem) => lineItem.id !== item.id))
                       }
-                      disabled={lineItems.length === 1}
+                      disabled={!canManageProcurementDrafts || lineItems.length === 1}
                       className="rounded-md border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 disabled:opacity-40"
                     >
                       Remove
@@ -1055,7 +1090,7 @@ function OperationsPage() {
             <button
               type="button"
               onClick={handleProcurementSave}
-              disabled={savePurchaseOrderMutation.isPending}
+              disabled={!canManageProcurementDrafts || savePurchaseOrderMutation.isPending}
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {savePurchaseOrderMutation.isPending ? 'Saving...' : editingPurchaseOrderId ? 'Update Draft' : 'Save Draft'}
@@ -1075,7 +1110,7 @@ function OperationsPage() {
                           type="checkbox"
                           aria-label="Select all pending-approval purchase orders"
                           checked={selectablePoIds.length > 0 && selectablePoIds.every((id) => selectedPoIds.includes(id))}
-                          disabled={selectablePoIds.length === 0}
+                          disabled={!canManageProcurementApprovals || selectablePoIds.length === 0}
                           onChange={(event) => setSelectedPoIds(event.target.checked ? selectablePoIds : [])}
                         />
                       </th>
@@ -1098,7 +1133,7 @@ function OperationsPage() {
                             type="checkbox"
                             aria-label={`Select ${order.po_number} for bulk approval`}
                             checked={selectedPoIds.includes(order.id)}
-                            disabled={!isSelectable}
+                            disabled={!canManageProcurementApprovals || !isSelectable}
                             onChange={(event) =>
                               setSelectedPoIds((current) =>
                                 event.target.checked
@@ -1145,9 +1180,10 @@ function OperationsPage() {
                         <td className="px-3 py-2">
                           <div className="flex min-w-64 gap-2">
                             {order.status === 'DRAFT' ? (
-                              <button type="button" onClick={() => loadPurchaseOrderMutation.mutate(order.id)} disabled={loadPurchaseOrderMutation.isPending} className="rounded-md border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 disabled:opacity-40">Edit</button>
+                              <button type="button" onClick={() => loadPurchaseOrderMutation.mutate(order.id)} disabled={!canManageProcurementDrafts || loadPurchaseOrderMutation.isPending} className="rounded-md border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 disabled:opacity-40">Edit</button>
                             ) : null}
                             <select
+                              disabled={!canManageProcurementApprovals}
                               value={statusDrafts[order.id] ?? order.status}
                               onChange={(event) =>
                                 setStatusDrafts((current) => ({
@@ -1155,7 +1191,7 @@ function OperationsPage() {
                                   [order.id]: event.target.value as POStatus,
                                 }))
                               }
-                              className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1"
+                              className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 disabled:bg-slate-100"
                             >
                               {(order.status === 'DRAFT'
                                 ? ['DRAFT', 'APPROVED']
@@ -1169,6 +1205,7 @@ function OperationsPage() {
                             <button
                               type="button"
                               disabled={
+                                !canManageProcurementApprovals ||
                                 updatePurchaseOrderStatusMutation.isPending ||
                                 (statusDrafts[order.id] ?? order.status) === order.status
                               }
@@ -1234,6 +1271,7 @@ function OperationsPage() {
             <p className="text-sm text-slate-600">
               Generates a fresh client_transaction_id on submit and appends nested commercial/volumetric details when enabled.
             </p>
+            {!canRunLedgerMutations ? <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Your role has read-only access for ledger and fluid actions.</p> : null}
             <p className="mt-2 font-mono text-xs text-slate-500">Trace ID: {currentTransactionId}</p>
             {ledgerForm.correction_of_transaction_id ? (
               <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -1561,7 +1599,7 @@ function OperationsPage() {
             <button
               type="button"
               onClick={handleBatchSync}
-              disabled={isSubmittingBatch}
+              disabled={!canRunLedgerMutations || isSubmittingBatch}
               className="rounded-md bg-amber-500 px-5 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-amber-600 hover:shadow-md disabled:opacity-60"
             >
               {isSubmittingBatch ? 'Submitting...' : 'Commit to Ledger'}
@@ -1569,7 +1607,7 @@ function OperationsPage() {
             <button
               type="button"
               onClick={handleFluidDispense}
-              disabled={isSubmittingFluid}
+              disabled={!canRunLedgerMutations || isSubmittingFluid}
               className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
             >
               {isSubmittingFluid ? 'Submitting fluid...' : 'Run Fluid Dispense'}
@@ -1649,8 +1687,9 @@ function OperationsPage() {
                             {row.sync_status === 'SUCCESS' ? (
                               <button
                                 type="button"
+                                disabled={!canRunLedgerMutations}
                                 onClick={() => loadCorrectionDraft(row.client_transaction_id)}
-                                className="mt-2 rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700"
+                                className="mt-2 rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 Correction
                               </button>
@@ -1663,8 +1702,9 @@ function OperationsPage() {
                             {row.sync_status === 'FAILED' ? (
                               <button
                                 type="button"
+                                disabled={!canRunLedgerMutations}
                                 onClick={() => loadRetryDraft(row.client_transaction_id)}
-                                className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700"
+                                className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 Fix & Retry
                               </button>
@@ -1701,7 +1741,7 @@ function OperationsPage() {
           </div>
         </div>
       ) : null}
-      {selectedPoIds.length > 0 ? (
+      {canManageProcurementApprovals && selectedPoIds.length > 0 ? (
         <div className="fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
           <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-lg">
             <span className="text-sm font-medium text-slate-700">

@@ -4,7 +4,9 @@ import { fetchMasterData } from '../api/masterDataService'
 import { masterDataQueryKey } from '../api/queryKeys'
 import { useCreateAndDispatchSiteTransfer, useReceiveSiteTransfer, useSiteTransfers } from '../api/siteTransferQueries'
 import { formatSiteTransferError, type ManagedSiteTransfer } from '../api/siteTransferService'
+import { useAuthContext } from '../context/useAuthContext'
 import { useTenantContext } from '../context/useTenantContext'
+import { hasRequiredRole } from '../types/rbac'
 import type { SiteTransferStatus } from '../types/schema'
 
 type WorkspaceTab = 'outgoing' | 'in-transit' | 'incoming'
@@ -38,6 +40,7 @@ function emptyDispatchLine(): DispatchLineDraft {
 }
 
 function SiteTransfersPage() {
+  const { user } = useAuthContext()
   const { selectedTenantId, selectedTenantName } = useTenantContext()
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('outgoing')
   const [mySiteId, setMySiteId] = useState('')
@@ -194,6 +197,7 @@ function SiteTransfersPage() {
     : activeTab === 'incoming'
       ? receivableIncomingTransfers
       : inTransitTransfers
+  const canManageTransfers = Boolean(user && hasRequiredRole(user.role, ['ADMIN', 'SITE_MANAGER', 'OPERATOR']))
 
   return (
     <section className="space-y-4">
@@ -209,13 +213,19 @@ function SiteTransfersPage() {
           <button
             type="button"
             onClick={openDispatchModal}
-            disabled={!effectiveSiteId}
+            disabled={!canManageTransfers || !effectiveSiteId}
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
           >
             Dispatch Transfer
           </button>
         </div>
       </header>
+
+      {!canManageTransfers ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Your role has read-only access for transfer dispatch and receiving actions.
+        </p>
+      ) : null}
 
       <div className="border-y border-slate-200 bg-white px-4 py-3">
         <label className="block max-w-xs space-y-1 text-sm font-medium text-slate-700">
@@ -310,7 +320,7 @@ function SiteTransfersPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        {transfer.destination_site_id === effectiveSiteId
+                        {canManageTransfers && transfer.destination_site_id === effectiveSiteId
                           && RECEIVABLE_STATUSES.includes(transfer.transfer_status) ? (
                           <button
                             type="button"
@@ -346,13 +356,14 @@ function SiteTransfersPage() {
               </div>
               <button type="button" onClick={closeDispatchModal} aria-label="Close dispatch modal" className="text-2xl text-slate-500">×</button>
             </div>
-            <form className="mt-6 space-y-4" onSubmit={(event) => { event.preventDefault(); if (dispatchFormValid) submitDispatch() }}>
+            <form className="mt-6 space-y-4" onSubmit={(event) => { event.preventDefault(); if (canManageTransfers && dispatchFormValid) submitDispatch() }}>
               <label className="block space-y-1 text-sm font-medium text-slate-700">
                 <span>Destination site</span>
                 <select
+                  disabled={!canManageTransfers}
                   value={destinationSiteId}
                   onChange={(event) => setDestinationSiteId(event.target.value)}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2"
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 disabled:bg-slate-100"
                 >
                   <option value="">Select a site</option>
                   {sites.filter((site) => site.id !== effectiveSiteId).map((site) => (
@@ -366,9 +377,10 @@ function SiteTransfersPage() {
                 {dispatchLines.map((line) => (
                   <div key={line.id} className="grid grid-cols-[1fr_8rem_2rem] gap-2">
                     <select
+                      disabled={!canManageTransfers}
                       value={line.materialId}
                       onChange={(event) => updateDispatchLine(line.id, { materialId: event.target.value })}
-                      className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                      className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
                     >
                       <option value="">Select material</option>
                       {materials.map((material) => (
@@ -379,15 +391,16 @@ function SiteTransfersPage() {
                       type="number"
                       min="0"
                       step="any"
+                      disabled={!canManageTransfers}
                       value={line.quantity}
                       onChange={(event) => updateDispatchLine(line.id, { quantity: event.target.value })}
                       placeholder="Qty"
-                      className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
                     />
                     <button
                       type="button"
                       onClick={() => removeDispatchLine(line.id)}
-                      disabled={dispatchLines.length <= 1}
+                      disabled={!canManageTransfers || dispatchLines.length <= 1}
                       aria-label="Remove line"
                       className="text-slate-400 hover:text-rose-600 disabled:opacity-30"
                     >
@@ -395,7 +408,7 @@ function SiteTransfersPage() {
                     </button>
                   </div>
                 ))}
-                <button type="button" onClick={addDispatchLine} className="text-sm font-semibold text-slate-700 hover:text-slate-900">
+                <button type="button" disabled={!canManageTransfers} onClick={addDispatchLine} className="text-sm font-semibold text-slate-700 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40">
                   + Add line
                 </button>
               </div>
@@ -409,7 +422,7 @@ function SiteTransfersPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={!dispatchFormValid || createMutation.isPending}
+                  disabled={!canManageTransfers || !dispatchFormValid || createMutation.isPending}
                   className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                 >
                   {createMutation.isPending ? 'Dispatching...' : 'Dispatch Transfer'}
@@ -436,7 +449,7 @@ function SiteTransfersPage() {
               </div>
               <button type="button" onClick={closeReceiveModal} aria-label="Close receiving modal" className="text-2xl text-slate-500">×</button>
             </div>
-            <form className="mt-6 space-y-4" onSubmit={(event) => { event.preventDefault(); if (receiveFormValid) submitReceive() }}>
+            <form className="mt-6 space-y-4" onSubmit={(event) => { event.preventDefault(); if (canManageTransfers && receiveFormValid) submitReceive() }}>
               {receiveLines.map((line) => (
                 <div key={line.materialId} className="space-y-2 border border-slate-200 p-3">
                   <div className="flex items-center justify-between text-sm font-semibold text-slate-800">
@@ -450,19 +463,21 @@ function SiteTransfersPage() {
                       min="0"
                       max={line.remaining}
                       step="any"
+                      disabled={!canManageTransfers}
                       value={line.quantity}
                       onChange={(event) => updateReceiveLine(line.materialId, { quantity: event.target.value })}
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
                     />
                   </label>
                   <label className="block space-y-1 text-sm font-medium text-slate-700">
                     <span>Discrepancy reason (if any)</span>
                     <input
                       type="text"
+                      disabled={!canManageTransfers}
                       value={line.discrepancyReason}
                       onChange={(event) => updateReceiveLine(line.materialId, { discrepancyReason: event.target.value })}
                       placeholder="e.g. damaged in transit"
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
                     />
                   </label>
                 </div>
@@ -476,7 +491,7 @@ function SiteTransfersPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={!receiveFormValid || receiveMutation.isPending}
+                  disabled={!canManageTransfers || !receiveFormValid || receiveMutation.isPending}
                   className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                 >
                   {receiveMutation.isPending ? 'Reconciling...' : 'Reconcile'}

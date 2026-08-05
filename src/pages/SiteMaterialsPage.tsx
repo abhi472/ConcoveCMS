@@ -11,7 +11,9 @@ import {
   saveSiteMaterialAssignment,
   type SiteMaterialAssignment,
 } from '../api/siteMaterialService'
+import { useAuthContext } from '../context/useAuthContext'
 import { useTenantContext } from '../context/useTenantContext'
+import { hasRequiredRole } from '../types/rbac'
 
 type SaveInput = {
   assignment: SiteMaterialAssignment
@@ -22,6 +24,7 @@ type SaveInput = {
 function AssignmentRow({
   assignment,
   isPending,
+  canManage,
   onSave,
   onRemove,
   selected,
@@ -29,6 +32,7 @@ function AssignmentRow({
 }: {
   assignment: SiteMaterialAssignment
   isPending: boolean
+  canManage: boolean
   onSave: (input: SaveInput) => void
   onRemove: (assignment: SiteMaterialAssignment) => void
   selected: boolean
@@ -48,6 +52,7 @@ function AssignmentRow({
           type="checkbox"
           aria-label={`Select ${assignment.material_code}`}
           checked={selected}
+          disabled={!canManage}
           onChange={(event) => onSelectedChange(event.target.checked)}
         />
       </td>
@@ -65,7 +70,7 @@ function AssignmentRow({
           value={lowThreshold}
           onChange={(event) => setLowThreshold(event.target.value)}
           className="w-28 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 disabled:bg-slate-100"
-          disabled={!assignment.is_active || isPending}
+          disabled={!canManage || !assignment.is_active || isPending}
         />
       </td>
       <td className="px-4 py-3">
@@ -77,7 +82,7 @@ function AssignmentRow({
           value={criticalThreshold}
           onChange={(event) => setCriticalThreshold(event.target.value)}
           className="w-28 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 disabled:bg-slate-100"
-          disabled={!assignment.is_active || isPending}
+          disabled={!canManage || !assignment.is_active || isPending}
         />
       </td>
       <td className="px-4 py-3">
@@ -91,7 +96,7 @@ function AssignmentRow({
             <>
               <button
                 type="button"
-                disabled={invalidThresholds || isPending}
+                disabled={!canManage || invalidThresholds || isPending}
                 onClick={() => onSave({ assignment, lowStockThreshold: low, criticalStockThreshold: critical })}
                 className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -99,7 +104,7 @@ function AssignmentRow({
               </button>
               <button
                 type="button"
-                disabled={isPending}
+                disabled={!canManage || isPending}
                 onClick={() => onRemove(assignment)}
                 className="rounded-md border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
               >
@@ -109,7 +114,7 @@ function AssignmentRow({
           ) : (
             <button
               type="button"
-              disabled={isPending}
+              disabled={!canManage || isPending}
               onClick={() => onSave({ assignment, lowStockThreshold: low, criticalStockThreshold: critical })}
               className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
             >
@@ -125,6 +130,7 @@ function AssignmentRow({
 
 function SiteMaterialsPage() {
   const queryClient = useQueryClient()
+  const { user } = useAuthContext()
   const [searchParams] = useSearchParams()
   const { selectedTenantId, selectedTenantName } = useTenantContext()
   const [siteSelection, setSiteSelection] = useState('')
@@ -206,6 +212,7 @@ function SiteMaterialsPage() {
   })
 
   const normalizedSearch = search.trim().toLowerCase()
+  const canManageAssignments = Boolean(user && hasRequiredRole(user.role, ['ADMIN', 'SITE_MANAGER', 'OPERATOR']))
   const assignments = (assignmentsQuery.data ?? []).filter((assignment) =>
     !normalizedSearch ||
     assignment.material_code.toLowerCase().includes(normalizedSearch) ||
@@ -247,13 +254,19 @@ function SiteMaterialsPage() {
         <div className="pb-2 text-sm text-slate-600">
           {assignments.filter((item) => item.is_active).length} assigned / {assignments.length} shown
         </div>
-        {selectedMaterialIds.size > 0 ? (
+        {canManageAssignments && selectedMaterialIds.size > 0 ? (
           <div className="flex gap-2 pb-1">
             <button type="button" disabled={bulkMutation.isPending} onClick={() => bulkMutation.mutate('ASSIGN')} className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">Assign selected</button>
             <button type="button" disabled={bulkMutation.isPending} onClick={() => bulkMutation.mutate('UNASSIGN')} className="rounded-md border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-40">Unassign selected</button>
           </div>
         ) : null}
       </div>
+
+      {!canManageAssignments ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Your role has read-only access for site-material assignments.
+        </p>
+      ) : null}
 
       {feedback ? (
         <div className={`border px-4 py-3 text-sm ${feedback.kind === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
@@ -288,6 +301,7 @@ function SiteMaterialsPage() {
                       type="checkbox"
                       aria-label="Select all shown materials"
                       checked={assignments.length > 0 && assignments.every((item) => selectedMaterialIds.has(item.material_id))}
+                      disabled={!canManageAssignments}
                       onChange={(event) => setSelectedMaterialIds((current) => {
                         const next = new Set(current)
                         assignments.forEach((item) => event.target.checked ? next.add(item.material_id) : next.delete(item.material_id))
@@ -309,6 +323,7 @@ function SiteMaterialsPage() {
                     key={`${assignment.site_id}:${assignment.material_id}:${assignment.updated_at}:${assignment.is_active}`}
                     assignment={assignment}
                     isPending={(saveMutation.isPending || removeMutation.isPending) && pendingMaterialId === assignment.material_id}
+                    canManage={canManageAssignments}
                     onSave={(input) => { setFeedback(null); saveMutation.mutate(input) }}
                     onRemove={(item) => { setFeedback(null); removeMutation.mutate(item) }}
                     selected={selectedMaterialIds.has(assignment.material_id)}
