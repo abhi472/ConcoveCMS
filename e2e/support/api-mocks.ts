@@ -1,5 +1,18 @@
 import type { Page, Route } from '@playwright/test'
 
+const TEST_ACCESS_TOKEN = 'test-access-token'
+const TEST_REFRESH_TOKEN = 'test-refresh-token'
+export const TEST_USER = {
+  user_id: '11111111-1111-1111-1111-111111111111',
+  tenant_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  tenant_name: 'Badri Rai Construction',
+  role: 'ADMIN',
+  email: 'admin@concove.test',
+  display_name: 'Admin User',
+}
+
+type MockUser = typeof TEST_USER
+
 interface Pagination {
   page: number
   page_size: number
@@ -19,11 +32,43 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
  * other mock in a test so the dev server's proxy to the live Render backend is never
  * reached, even for endpoints a test forgets to mock explicitly.
  */
-export async function installSafetyNetMocks(page: Page) {
+export async function installSafetyNetMocks(page: Page, options?: { user?: Partial<MockUser> }) {
+  const mockUser: MockUser = {
+    ...TEST_USER,
+    ...options?.user,
+  }
+
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
     const method = request.method()
     const pathname = new URL(request.url()).pathname
+
+    if (pathname.endsWith('/auth/login') && method === 'POST') {
+      await fulfillJson(route, {
+        access_token: TEST_ACCESS_TOKEN,
+        refresh_token: TEST_REFRESH_TOKEN,
+        user: mockUser,
+      })
+      return
+    }
+
+    if (pathname.endsWith('/auth/refresh') && method === 'POST') {
+      await fulfillJson(route, {
+        access_token: TEST_ACCESS_TOKEN,
+        refresh_token: TEST_REFRESH_TOKEN,
+      })
+      return
+    }
+
+    if (pathname.endsWith('/auth/logout') && method === 'POST') {
+      await fulfillJson(route, { success: true })
+      return
+    }
+
+    if (pathname.endsWith('/auth/me') && method === 'GET') {
+      await fulfillJson(route, mockUser)
+      return
+    }
 
     if (method !== 'GET') {
       await fulfillJson(route, { data: {} })
@@ -49,6 +94,12 @@ export async function installSafetyNetMocks(page: Page) {
     }
 
     await fulfillJson(route, listBody([]))
+  })
+}
+
+export async function bootstrapAuthenticatedSession(page: Page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('concove.auth.refresh', 'test-refresh-token')
   })
 }
 
