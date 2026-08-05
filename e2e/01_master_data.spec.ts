@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import {
+  bootstrapAuthenticatedSession,
   installSafetyNetMocks,
   mockEntities,
   mockEquipment,
@@ -12,20 +13,17 @@ import { ENTITIES, MATERIAL_CEMENT, MATERIAL_STEEL, MATERIALS, SITE_ALPHA, VENDO
 
 test.describe('Master data workflows', () => {
   test.beforeEach(async ({ page }) => {
+    await bootstrapAuthenticatedSession(page)
     await installSafetyNetMocks(page)
   })
 
-  test('displays the active tenant in the workspace header', async ({ page }) => {
-    // Note: this CMS build is single-tenant (VITE_TENANT_ID env var) — there is only
-    // ever one option in the tenant selector, so there is no multi-tenant switch to test.
+  test('displays the active tenant and authenticated user in the workspace header', async ({ page }) => {
     await mockMasterData(page, { materials: [], entities: [], purchase_orders: [] })
 
     await page.goto('/')
 
     await expect(page.getByRole('heading', { level: 1, name: 'Badri Rai Construction' })).toBeVisible()
-    const tenantSelect = page.locator('#tenant-select')
-    await expect(tenantSelect).toBeVisible()
-    await expect(tenantSelect.locator('option')).toHaveCount(1)
+    await expect(page.getByText('User: admin@concove.test')).toBeVisible()
   })
 
   test('filters the material catalog by search term', async ({ page }) => {

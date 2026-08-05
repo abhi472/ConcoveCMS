@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { installSafetyNetMocks, mockEquipment, mockMasterData } from './support/api-mocks'
+import { bootstrapAuthenticatedSession, installSafetyNetMocks, mockEquipment, mockMasterData } from './support/api-mocks'
 import { SITE_ALPHA, SITE_BETA } from './support/fixtures'
 
 // Note: EquipmentPage currently exposes search/status/site filters and an Add/Edit
@@ -33,6 +33,7 @@ const EQUIPMENT_LIST = [EXCAVATOR, MIXER]
 
 test.describe('Equipment registry workflows', () => {
   test.beforeEach(async ({ page }) => {
+    await bootstrapAuthenticatedSession(page)
     await installSafetyNetMocks(page)
     await mockMasterData(page, { materials: [], entities: [SITE_ALPHA, SITE_BETA], purchase_orders: [] })
   })
