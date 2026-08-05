@@ -153,6 +153,13 @@ export async function mockTransactionsBatch(page: Page, response: unknown) {
   })
 }
 
+export async function mockAnalyticsOverview(page: Page, overview: unknown) {
+  await page.route('**/api/v1/analytics/overview**', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback()
+    await fulfillJson(route, overview)
+  })
+}
+
 interface EquipmentFixture {
   id: string
   name: string
