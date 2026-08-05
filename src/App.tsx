@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
 import RequireAuth from './components/RequireAuth'
 import RequireRole from './components/RequireRole'
+import AnalyticsPage from './pages/AnalyticsPage'
 import Dashboard from './pages/Dashboard'
 import EntitiesPage from './pages/EntitiesPage'
 import EquipmentPage from './pages/EquipmentPage'
@@ -20,6 +21,7 @@ function App() {
       <Route element={<RequireAuth />}>
         <Route path="/" element={<Layout />}>
           <Route index element={<Dashboard />} />
+          <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="materials" element={<MaterialsPage />} />
           <Route path="site-materials" element={<SiteMaterialsPage />} />
           <Route path="entities" element={<EntitiesPage />} />

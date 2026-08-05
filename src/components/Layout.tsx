@@ -17,6 +17,7 @@ function Layout() {
 
   const breadcrumbMap: Record<string, string> = {
     '/': 'Dashboard',
+    '/analytics': 'Analytics / Telemetry',
     '/materials': 'Materials / Catalog',
     '/site-materials': 'Materials / Site assignments',
     '/entities': 'Entities / Directory',

@@ -30,6 +30,18 @@ function Sidebar() {
           Dashboard
         </NavLink>
         <NavLink
+          to="/analytics"
+          className={({ isActive }) =>
+            `${baseLinkStyles} ${
+              isActive
+                ? 'bg-amber-500 text-slate-900 font-semibold shadow-sm'
+                : 'text-slate-200 hover:bg-slate-700 hover:text-white'
+            }`
+          }
+        >
+          Analytics
+        </NavLink>
+        <NavLink
           to="/materials"
           className={({ isActive }) =>
             `${baseLinkStyles} ${
