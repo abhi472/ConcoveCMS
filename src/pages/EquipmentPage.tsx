@@ -4,7 +4,9 @@ import { fetchMasterData } from '../api/masterDataService'
 import { masterDataQueryKey } from '../api/queryKeys'
 import { useCreateEquipment, useEquipment, useUpdateEquipment } from '../api/equipmentQueries'
 import { formatEquipmentError, type EquipmentInput } from '../api/equipmentService'
+import { useAuthContext } from '../context/useAuthContext'
 import { useTenantContext } from '../context/useTenantContext'
+import { hasRequiredRole } from '../types/rbac'
 import type { Equipment, EquipmentStatus } from '../types/schema'
 
 const statusOptions: EquipmentStatus[] = ['ACTIVE', 'IN_MAINTENANCE', 'INACTIVE']
@@ -23,6 +25,7 @@ const emptyForm: EquipmentInput = {
 }
 
 function EquipmentPage() {
+  const { user } = useAuthContext()
   const { selectedTenantId, selectedTenantName } = useTenantContext()
   const [search, setSearch] = useState('')
   const deferredSearch = useDeferredValue(search)
@@ -86,6 +89,7 @@ function EquipmentPage() {
   }
 
   const equipmentList = equipmentQuery.data?.data ?? []
+  const canManageEquipment = Boolean(user && hasRequiredRole(user.role, ['ADMIN', 'SITE_MANAGER', 'OPERATOR']))
   const total = equipmentQuery.data?.pagination.total ?? 0
   const pageCount = Math.max(1, Math.ceil(total / 50))
   const formValid = Boolean(form.name.trim() && form.registrationNumber.trim() && form.make.trim() && form.model.trim())
@@ -107,12 +111,19 @@ function EquipmentPage() {
           <button
             type="button"
             onClick={openCreate}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+            disabled={!canManageEquipment}
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Add Equipment
           </button>
         </div>
       </header>
+
+      {!canManageEquipment ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Your role has read-only access for equipment records.
+        </p>
+      ) : null}
 
       <div className="grid gap-3 border-y border-slate-200 bg-white px-4 py-3 md:grid-cols-[minmax(14rem,1fr)_10rem_12rem]">
         <label className="space-y-1 text-sm font-medium text-slate-700">
@@ -202,7 +213,7 @@ function EquipmentPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        <button type="button" onClick={() => openEdit(equipment)} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Edit</button>
+                        <button type="button" disabled={!canManageEquipment} onClick={() => openEdit(equipment)} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">Edit</button>
                       </div>
                     </td>
                   </tr>
@@ -231,42 +242,42 @@ function EquipmentPage() {
               </div>
               <button type="button" onClick={closeEditor} aria-label="Close equipment editor" className="text-2xl text-slate-500">×</button>
             </div>
-            <form className="mt-6 space-y-4" onSubmit={(event) => { event.preventDefault(); if (formValid) saveEquipment() }}>
+            <form className="mt-6 space-y-4" onSubmit={(event) => { event.preventDefault(); if (canManageEquipment && formValid) saveEquipment() }}>
               <label className="block space-y-1 text-sm font-medium text-slate-700">
                 <span>Name</span>
-                <input value={form.name} onChange={(event) => setForm((value) => ({ ...value, name: event.target.value }))} className="w-full rounded-md border border-slate-300 px-3 py-2" />
+                <input disabled={!canManageEquipment} value={form.name} onChange={(event) => setForm((value) => ({ ...value, name: event.target.value }))} className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:bg-slate-100" />
               </label>
               <label className="block space-y-1 text-sm font-medium text-slate-700">
                 <span>Registration number</span>
-                <input value={form.registrationNumber} onChange={(event) => setForm((value) => ({ ...value, registrationNumber: event.target.value }))} className="w-full rounded-md border border-slate-300 px-3 py-2" />
+                <input disabled={!canManageEquipment} value={form.registrationNumber} onChange={(event) => setForm((value) => ({ ...value, registrationNumber: event.target.value }))} className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:bg-slate-100" />
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <label className="space-y-1 text-sm font-medium text-slate-700">
                   <span>Make</span>
-                  <input value={form.make} onChange={(event) => setForm((value) => ({ ...value, make: event.target.value }))} className="w-full rounded-md border border-slate-300 px-3 py-2" />
+                  <input disabled={!canManageEquipment} value={form.make} onChange={(event) => setForm((value) => ({ ...value, make: event.target.value }))} className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:bg-slate-100" />
                 </label>
                 <label className="space-y-1 text-sm font-medium text-slate-700">
                   <span>Model</span>
-                  <input value={form.model} onChange={(event) => setForm((value) => ({ ...value, model: event.target.value }))} className="w-full rounded-md border border-slate-300 px-3 py-2" />
+                  <input disabled={!canManageEquipment} value={form.model} onChange={(event) => setForm((value) => ({ ...value, model: event.target.value }))} className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:bg-slate-100" />
                 </label>
               </div>
               <label className="block space-y-1 text-sm font-medium text-slate-700">
                 <span>Current site</span>
-                <select value={form.currentSiteId ?? ''} onChange={(event) => setForm((value) => ({ ...value, currentSiteId: event.target.value }))} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2">
+                <select disabled={!canManageEquipment} value={form.currentSiteId ?? ''} onChange={(event) => setForm((value) => ({ ...value, currentSiteId: event.target.value }))} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 disabled:bg-slate-100">
                   <option value="">Unassigned</option>
                   {sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
                 </select>
               </label>
               <label className="block space-y-1 text-sm font-medium text-slate-700">
                 <span>Status</span>
-                <select value={form.status} onChange={(event) => setForm((value) => ({ ...value, status: event.target.value as EquipmentStatus }))} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2">
+                <select disabled={!canManageEquipment} value={form.status} onChange={(event) => setForm((value) => ({ ...value, status: event.target.value as EquipmentStatus }))} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 disabled:bg-slate-100">
                   {statusOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                 </select>
               </label>
               {feedback?.kind === 'error' ? <p className="border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{feedback.message}</p> : null}
               <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
                 <button type="button" onClick={closeEditor} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
-                <button type="submit" disabled={!formValid || isSaving} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{isSaving ? 'Saving...' : 'Save Equipment'}</button>
+                <button type="submit" disabled={!canManageEquipment || !formValid || isSaving} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{isSaving ? 'Saving...' : 'Save Equipment'}</button>
               </div>
             </form>
           </div>
