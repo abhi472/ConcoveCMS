@@ -1,8 +1,10 @@
 import { NavLink } from 'react-router-dom'
+import { useAuthContext } from '../context/useAuthContext'
 import { useTenantContext } from '../context/useTenantContext'
 
 function Sidebar() {
   const { selectedTenantId, selectedTenantName } = useTenantContext()
+  const { user } = useAuthContext()
 
   const baseLinkStyles =
     'block rounded-md px-3 py-1.5 text-sm font-medium transition-all'
@@ -39,6 +41,20 @@ function Sidebar() {
         >
           Materials
         </NavLink>
+        {user?.role === 'ADMIN' || user?.role === 'SITE_MANAGER' ? (
+          <NavLink
+            to="/entities"
+            className={({ isActive }) =>
+              `${baseLinkStyles} ${
+                isActive
+                  ? 'bg-amber-500 text-slate-900 font-semibold shadow-sm'
+                  : 'text-slate-200 hover:bg-slate-700 hover:text-white'
+              }`
+            }
+          >
+            Entities
+          </NavLink>
+        ) : null}
         <NavLink
           to="/site-materials"
           className={({ isActive }) =>
@@ -50,18 +66,6 @@ function Sidebar() {
           }
         >
           Site Materials
-        </NavLink>
-        <NavLink
-          to="/entities"
-          className={({ isActive }) =>
-            `${baseLinkStyles} ${
-              isActive
-                ? 'bg-amber-500 text-slate-900 font-semibold shadow-sm'
-                : 'text-slate-200 hover:bg-slate-700 hover:text-white'
-            }`
-          }
-        >
-          Entities
         </NavLink>
         <NavLink
           to="/equipment"
@@ -111,6 +115,20 @@ function Sidebar() {
         >
           Sync Monitor
         </NavLink>
+        {user?.role === 'ADMIN' ? (
+          <NavLink
+            to="/users"
+            className={({ isActive }) =>
+              `${baseLinkStyles} ${
+                isActive
+                  ? 'bg-amber-500 text-slate-900 font-semibold shadow-sm'
+                  : 'text-slate-200 hover:bg-slate-700 hover:text-white'
+              }`
+            }
+          >
+            Users
+          </NavLink>
+        ) : null}
       </nav>
       <div className="mt-auto rounded-lg bg-slate-700/60 p-3">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">

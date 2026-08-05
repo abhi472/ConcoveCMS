@@ -1,14 +1,14 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import { useIsFetching, useIsMutating, useQueryClient } from '@tanstack/react-query'
+import { useAuthContext } from '../context/useAuthContext'
 import { useTenantContext } from '../context/useTenantContext'
 import Sidebar from './Sidebar'
 
 function Layout() {
+  const { user, logout } = useAuthContext()
   const {
     selectedTenantId,
     selectedTenantName,
-    availableTenants,
-    setSelectedTenantId,
   } = useTenantContext()
   const location = useLocation()
   const queryClient = useQueryClient()
@@ -60,24 +60,19 @@ function Layout() {
               <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">
                 {mutatingCount > 0 ? `${mutatingCount} change${mutatingCount === 1 ? '' : 's'} saving` : `Fresh as of ${freshness}`}
               </div>
-              <div className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600" title="Trusted backend service actor; authenticated user identity is not configured">
-                Actor: cms-service
+              <div className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600" title="Authenticated user identity">
+                User: {user?.email ?? 'Unknown'}
               </div>
-              <label htmlFor="tenant-select" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Tenant
-              </label>
-              <select
-                id="tenant-select"
-                value={selectedTenantId}
-                onChange={(event) => setSelectedTenantId(event.target.value)}
-                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+              <div className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600" title="Role scope">
+                Role: {user?.role ?? 'Unknown'}
+              </div>
+              <button
+                type="button"
+                onClick={() => { void logout() }}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100"
               >
-                {availableTenants.map((tenant) => (
-                  <option key={tenant.id} value={tenant.id}>
-                    {tenant.name}
-                  </option>
-                ))}
-              </select>
+                Logout
+              </button>
             </div>
           </div>
         </header>
