@@ -6,6 +6,10 @@ export function inventoryDashboardQueryKey(tenantId: string, siteId?: string) {
   return ['inventory-dashboard', tenantId, siteId || 'all-sites'] as const
 }
 
+export function analyticsOverviewQueryKey(tenantId: string, siteId?: string, days = 30) {
+  return ['analytics-overview', tenantId, siteId || 'all-sites', days] as const
+}
+
 export function inventoryBalancesQueryKey(tenantId: string, siteId?: string, materialId?: string) {
   return ['inventory-balances', tenantId, siteId || 'all-sites', materialId || 'all-materials'] as const
 }
