@@ -28,6 +28,17 @@ export interface MaterialInput {
   conversionFactor: number
 }
 
+export interface CsvImportResultRow {
+  row_number: number
+  sync_status: 'SUCCESS' | 'FAILED'
+  reference: string
+  message: string
+}
+
+export interface CsvImportResponse {
+  results: CsvImportResultRow[]
+}
+
 interface MaterialListResponse {
   data: ManagedMaterial[]
   pagination: { page: number; page_size: number; total: number }
@@ -87,6 +98,14 @@ export async function archiveMaterial(tenantId: string, materialId: string) {
 export async function restoreMaterial(tenantId: string, materialId: string) {
   const response = await axiosClient.post<MaterialResponse>(`/materials/${materialId}/restore`, { tenant_id: tenantId })
   return response.data.data
+}
+
+export async function importMaterialsCsv(tenantId: string, csvContent: string) {
+  const response = await axiosClient.post<CsvImportResponse>('/materials/csv', {
+    tenant_id: tenantId,
+    csv_content: csvContent,
+  })
+  return response.data
 }
 
 export function formatMaterialError(error: unknown) {

@@ -59,6 +59,17 @@ interface EntityErrorBody {
   blockers?: Array<{ code: string; count?: number }>
 }
 
+export interface CsvImportResultRow {
+  row_number: number
+  sync_status: 'SUCCESS' | 'FAILED'
+  reference: string
+  message: string
+}
+
+export interface CsvImportResponse {
+  results: CsvImportResultRow[]
+}
+
 export async function fetchEntities(params: {
   tenantId: string
   search?: string
@@ -146,6 +157,19 @@ export async function removeEntitySite(tenantId: string, entityId: string, siteI
     params: { tenant_id: tenantId },
   })
   return response.data.data
+}
+
+export async function importEntitiesCsv(params: {
+  tenantId: string
+  csvContent: string
+  defaultEntityType?: EntityType
+}) {
+  const response = await axiosClient.post<CsvImportResponse>('/entities/csv', {
+    tenant_id: params.tenantId,
+    csv_content: params.csvContent,
+    default_entity_type: params.defaultEntityType,
+  })
+  return response.data
 }
 
 export function formatEntityError(error: unknown) {
