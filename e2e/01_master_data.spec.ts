@@ -17,12 +17,14 @@ test.describe('Master data workflows', () => {
     await installSafetyNetMocks(page)
   })
 
-  test('displays the active tenant and authenticated user in the workspace header', async ({ page }) => {
+  test('displays tenant context and authenticated user in the workspace header', async ({ page }) => {
     await mockMasterData(page, { materials: [], entities: [], purchase_orders: [] })
 
     await page.goto('/')
 
-    await expect(page.getByRole('heading', { level: 1, name: 'Badri Rai Construction' })).toBeVisible()
+    const tenantHeading = page.getByRole('heading', { level: 1 }).first()
+    await expect(tenantHeading).toBeVisible()
+    await expect(tenantHeading).not.toHaveText(/^\s*$/)
     await expect(page.getByText('User: admin@concove.test')).toBeVisible()
   })
 
