@@ -23,6 +23,7 @@ test.describe('Authentication workflows', () => {
 
     await expect(page).toHaveURL(/\/$/)
     await expect(page.getByText('User: admin@concove.test')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Inventory God View' })).toBeVisible()
   })
 
   test('clears session and returns to login on logout', async ({ page }) => {

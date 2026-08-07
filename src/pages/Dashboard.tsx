@@ -27,10 +27,15 @@ function formatQuantity(value: number) {
 }
 
 function formatTimestamp(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return 'Unknown time'
+  }
+
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',
-  }).format(new Date(value))
+  }).format(date)
 }
 
 function BalanceCell({
@@ -157,6 +162,56 @@ function Dashboard() {
 
   return (
     <section className="space-y-4">
+      <div className="overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white shadow-lg shadow-slate-200/60">
+        <div className="flex flex-col gap-6 p-5 sm:p-6 xl:flex-row xl:items-end xl:justify-between">
+          <div className="max-w-3xl space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-300">
+              Command Center
+            </p>
+            <div>
+              <h2 className="text-2xl font-semibold text-white sm:text-3xl">
+                Inventory God View
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-300">
+                Monitor stock health across the tenant, surface urgent risks, and jump directly
+                into Operations from one dashboard.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3 xl:min-w-[34rem] xl:grid-cols-3">
+            <HeroStat label="Tracked materials" value={inventory?.summary.material_count ?? 0} />
+            <HeroStat label="Critical risks" value={inventory?.summary.critical_stock_count ?? 0} />
+            <HeroStat label="Out of stock" value={inventory?.summary.out_of_stock_count ?? 0} />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-white/5 px-5 py-4 text-sm text-slate-200 sm:px-6">
+          <div>
+            <span className="font-semibold text-white">Scope:</span>{' '}
+            {selectedSite?.name ?? 'All sites'} · {selectedTenantName}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              to="/materials"
+              className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20"
+            >
+              Open materials
+            </Link>
+            <Link
+              to="/site-materials"
+              className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20"
+            >
+              Adjust thresholds
+            </Link>
+            <Link
+              to="/operations"
+              className="rounded-full border border-amber-300/40 bg-amber-300/15 px-3 py-1.5 text-xs font-semibold text-amber-100 transition hover:bg-amber-300/25"
+            >
+              Record movement
+            </Link>
+          </div>
+        </div>
+      </div>
+
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-slate-900">Inventory Dashboard</h2>
@@ -398,6 +453,17 @@ function Metric({
     <div className={`rounded-lg border bg-white p-3 shadow-sm ${tones[tone]}`}>
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-1 text-2xl font-semibold">{value}</p>
+    </div>
+  )
+}
+
+function HeroStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-300">
+        {label}
+      </p>
+      <p className="mt-1 text-2xl font-semibold text-white">{value}</p>
     </div>
   )
 }
