@@ -6,6 +6,8 @@ All API calls are prefixed with `/api/v1` and require:
 - `tenant_id` query parameter (GET) or in request body (POST)  
 - `X-Tenant-ID` header (automatically added by axios interceptor)
 
+Release note (2026-08-07): FEAT-009 frontend analytics integration is complete in source. If `/api/v1/analytics/overview` returns `404`, deploy the latest backend revision that includes analytics route/controller wiring.
+
 ### Master Data (Read-Only)
 
 **Endpoint:** `GET /api/v1/sync/master-data`
@@ -26,6 +28,7 @@ This endpoint remains a bootstrap compatibility contract. Operational catalog sc
 **Endpoints:**
 - `GET /api/v1/materials?tenant_id&search&status&base_uom_id&sort&direction&page&page_size`
 - `POST /api/v1/materials`
+- `POST /api/v1/materials/csv`
 - `GET /api/v1/materials/{material_id}?tenant_id`
 - `PATCH /api/v1/materials/{material_id}`
 - `POST /api/v1/materials/{material_id}/archive`
@@ -38,6 +41,7 @@ Material codes are normalized server-side to lowercase kebab-case and are unique
 **Endpoints:**
 - `GET /api/v1/entities?tenant_id&search&entity_type&status&site_id&page&page_size`
 - `POST /api/v1/entities`
+- `POST /api/v1/entities/csv`
 - `GET /api/v1/entities/{entity_id}?tenant_id`
 - `PATCH /api/v1/entities/{entity_id}`
 - `POST /api/v1/entities/{entity_id}/archive`
@@ -154,6 +158,8 @@ Returns authoritative active-assignment balances, base UOM, thresholds, and `OK|
 
 **Endpoint:** `POST /api/v1/sync/transactions/batch`
 
+**CSV Variant:** `POST /api/v1/sync/transactions/csv`
+
 **Request Body:** Array of `InventoryTransaction` objects
 
 **Response:** HTTP 207 Multi-Status with per-record outcomes:
@@ -185,6 +191,30 @@ Returns authoritative active-assignment balances, base UOM, thresholds, and `OK|
 **Request Body:** Fluid-specific transaction with `site_id` and `vehicle_id`
 
 **Response:** HTTP 207 Multi-Status (same structure as batch)
+
+### Analytics Overview
+
+**Endpoint:** `GET /api/v1/analytics/overview?tenant_id&site_id&days`
+
+**Role Access:** `ADMIN`, `SITE_MANAGER`, `OPERATOR`, `VIEWER`
+
+**Response Shape:**
+```json
+{
+  "generated_at": "2026-08-07T11:15:00Z",
+  "data": {
+    "range_days": 30,
+    "summary": {
+      "seven_day_inward_units": 3225,
+      "seven_day_outward_units": 2455,
+      "fulfillment_ratio_percent": 82.3,
+      "projected_spend_month": 4280000
+    },
+    "material_usage": [],
+    "po_allocation": []
+  }
+}
+```
 
 ### Transaction History
 

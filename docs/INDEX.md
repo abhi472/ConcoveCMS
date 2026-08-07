@@ -97,5 +97,5 @@ The following files contained overlapping content and have been consolidated:
 
 ---
 
-**Last Updated:** 2026-07-27
-**Status:** Consolidated and production-ready
+**Last Updated:** 2026-08-07
+**Status:** Consolidated; FEAT-009 analytics docs updated, backend deployment alignment pending for live analytics endpoint exposure.
