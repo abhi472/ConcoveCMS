@@ -1,11 +1,12 @@
 import { useDeferredValue, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { fetchInventoryBalances } from '../api/inventoryService'
 import { fetchSiteMaterials } from '../api/siteMaterialService'
 import { fetchPurchaseOrders } from '../api/purchaseOrdersService'
 import { fetchTransactionHistory } from '../api/transactionHistoryService'
 import { fetchAuditEvents } from '../api/auditService'
+import SiteMaterialsPage from './SiteMaterialsPage'
 import MaterialCodeNormalizer from '../components/MaterialCodeNormalizer'
 import {
   archiveMaterial,
@@ -51,10 +52,13 @@ function downloadCsvTemplate(filename: string, content: string) {
 }
 
 function MaterialsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const { user } = useAuthContext()
   const { selectedTenantId, selectedTenantName } = useTenantContext()
-  const [search, setSearch] = useState('')
+  const view = searchParams.get('view') === 'assignments' ? 'assignments' : 'catalog'
+  const isCatalogView = view === 'catalog'
+  const [search, setSearch] = useState(() => searchParams.get('material') ?? '')
   const deferredSearch = useDeferredValue(search)
   const [status, setStatus] = useState<'active' | 'archived' | 'all'>('active')
   const [baseUomId, setBaseUomId] = useState('')
@@ -84,31 +88,32 @@ function MaterialsPage() {
     queryKey: materialsQueryKey(selectedTenantId, filters),
     queryFn: () => fetchMaterials({ tenantId: selectedTenantId, ...filters }),
     placeholderData: (previousData) => previousData,
+    enabled: isCatalogView,
   })
   const detailsAssignmentsQuery = useQuery({
     queryKey: siteMaterialsQueryKey(selectedTenantId),
     queryFn: () => fetchSiteMaterials(selectedTenantId),
-    enabled: Boolean(detailsTarget),
+    enabled: isCatalogView && Boolean(detailsTarget),
   })
   const detailsBalancesQuery = useQuery({
     queryKey: inventoryBalancesQueryKey(selectedTenantId, undefined, detailsTarget?.id),
     queryFn: () => fetchInventoryBalances({ tenantId: selectedTenantId, materialId: detailsTarget!.id }),
-    enabled: Boolean(detailsTarget),
+    enabled: isCatalogView && Boolean(detailsTarget),
   })
   const detailsOrdersQuery = useQuery({
     queryKey: purchaseOrdersQueryKey(selectedTenantId, { materialId: detailsTarget?.id }),
     queryFn: () => fetchPurchaseOrders(selectedTenantId, { materialId: detailsTarget!.id }),
-    enabled: Boolean(detailsTarget),
+    enabled: isCatalogView && Boolean(detailsTarget),
   })
   const detailsTransactionsQuery = useQuery({
     queryKey: transactionsQueryKey(selectedTenantId, { materialId: detailsTarget?.id, pageSize: 5 }),
     queryFn: () => fetchTransactionHistory({ tenantId: selectedTenantId, materialId: detailsTarget!.id, pageSize: 5 }),
-    enabled: Boolean(detailsTarget),
+    enabled: isCatalogView && Boolean(detailsTarget),
   })
   const detailsAuditQuery = useQuery({
     queryKey: auditEventsQueryKey(selectedTenantId, { resourceType: 'MATERIAL', resourceId: detailsTarget?.id }),
     queryFn: () => fetchAuditEvents({ tenantId: selectedTenantId, resourceType: 'MATERIAL', resourceId: detailsTarget!.id, pageSize: 10 }),
-    enabled: Boolean(detailsTarget),
+    enabled: isCatalogView && Boolean(detailsTarget),
   })
 
   useEffect(() => {
@@ -229,8 +234,29 @@ function MaterialsPage() {
     downloadCsvTemplate('materials_template.csv', `${headers}\n${sampleRow}\n`)
   }
 
+  function setWorkspaceView(nextView: 'catalog' | 'assignments') {
+    const params = new URLSearchParams(searchParams)
+    if (nextView === 'catalog') {
+      params.delete('view')
+    } else {
+      params.set('view', 'assignments')
+    }
+    setSearchParams(params, { replace: true })
+  }
+
+  if (!isCatalogView) {
+    return (
+      <section className="space-y-4">
+        <MaterialWorkspaceTabs view={view} onChange={setWorkspaceView} />
+        <SiteMaterialsPage />
+      </section>
+    )
+  }
+
   return (
     <section className="space-y-4">
+      <MaterialWorkspaceTabs view={view} onChange={setWorkspaceView} />
+
       <header className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
         <div>
           <h2 className="text-xl font-semibold text-slate-900">Material Catalog</h2>
@@ -315,7 +341,7 @@ function MaterialsPage() {
         ) : null}
       </div>
 
-      <div className="grid gap-3 border-y border-slate-200 bg-white px-4 py-3 md:grid-cols-[minmax(14rem,1fr)_10rem_10rem_12rem]">
+      <div className="grid gap-3 border-y border-slate-200 bg-white px-4 py-3 md:grid-cols-2 lg:grid-cols-[minmax(14rem,1fr)_10rem_10rem_12rem]">
         <label className="space-y-1 text-sm font-medium text-slate-700">
           <span>Search</span>
           <input
@@ -433,7 +459,7 @@ function MaterialsPage() {
                         {!material.archived_at ? (
                           <>
                             <button type="button" disabled={!canManageMaterials} onClick={() => openEdit(material)} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">Edit</button>
-                            <Link to={`/site-materials?material=${encodeURIComponent(material.material_code)}`} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Sites</Link>
+                            <Link to={`/materials?view=assignments&material=${encodeURIComponent(material.material_code)}`} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Sites</Link>
                             <button type="button" disabled={!canManageMaterials} onClick={() => { setFeedback(null); setArchiveTarget(material) }} className="rounded-md border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-40">Archive</button>
                           </>
                         ) : (
@@ -515,7 +541,7 @@ function MaterialsPage() {
               <div><p className="text-xs text-slate-500">Status</p><p className="font-semibold">{detailsTarget.archived_at ? 'Archived' : 'Active'}</p></div>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
-              <Link to={`/site-materials?material=${encodeURIComponent(detailsTarget.material_code)}`} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Manage sites</Link>
+              <Link to={`/materials?view=assignments&material=${encodeURIComponent(detailsTarget.material_code)}`} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Manage sites</Link>
               <Link to={`/operations?mode=ledger&material=${detailsTarget.id}&type=INWARD`} className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Record receipt</Link>
               <Link to={`/operations?mode=ledger&material=${detailsTarget.id}&type=OUTWARD`} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Record issue</Link>
             </div>
@@ -549,6 +575,33 @@ function MaterialsPage() {
         </div>
       ) : null}
     </section>
+  )
+}
+
+function MaterialWorkspaceTabs({
+  view,
+  onChange,
+}: {
+  view: 'catalog' | 'assignments'
+  onChange: (nextView: 'catalog' | 'assignments') => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
+      <button
+        type="button"
+        onClick={() => onChange('catalog')}
+        className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${view === 'catalog' ? 'bg-slate-900 text-white' : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}
+      >
+        Catalog
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('assignments')}
+        className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${view === 'assignments' ? 'bg-slate-900 text-white' : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}
+      >
+        Site assignments
+      </button>
+    </div>
   )
 }
 

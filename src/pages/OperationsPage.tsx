@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
+import { LOOKUP_STALE_TIME_MS } from '../api/cachePolicy'
+import { invalidateTenantLookupAndSummaryData } from '../api/cacheInvalidation'
 import { formatApiError } from '../api/errorUtils'
 import { entitiesQueryKey, inventoryBalancesQueryKey, masterDataQueryKey, purchaseOrdersQueryKey } from '../api/queryKeys'
 import { fetchInventoryBalances } from '../api/inventoryService'
@@ -236,6 +238,8 @@ function OperationsPage() {
   const { data } = useQuery({
     queryKey: masterDataQueryKey(selectedTenantId),
     queryFn: () => fetchMasterData({ tenantId: selectedTenantId }),
+    staleTime: LOOKUP_STALE_TIME_MS,
+    placeholderData: (previousData) => previousData,
   })
   const { data: purchaseOrderData, isLoading: purchaseOrdersLoading } = useQuery({
     queryKey: purchaseOrdersQueryKey(selectedTenantId),
@@ -476,12 +480,8 @@ function OperationsPage() {
   }
 
   const invalidatePurchaseOrders = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: purchaseOrdersQueryKey(selectedTenantId) }),
-      queryClient.invalidateQueries({ queryKey: ['master-data', selectedTenantId] }),
-      queryClient.invalidateQueries({ queryKey: ['inventory-dashboard', selectedTenantId] }),
-      queryClient.invalidateQueries({ queryKey: ['site-materials', selectedTenantId] }),
-    ])
+    await invalidateTenantLookupAndSummaryData(queryClient, selectedTenantId)
+    await queryClient.invalidateQueries({ queryKey: purchaseOrdersQueryKey(selectedTenantId) })
   }
 
   const savePurchaseOrderMutation = useMutation({

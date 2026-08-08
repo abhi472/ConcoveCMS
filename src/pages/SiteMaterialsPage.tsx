@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
+import { LOOKUP_STALE_TIME_MS } from '../api/cachePolicy'
+import { invalidateTenantLookupAndSummaryData } from '../api/cacheInvalidation'
 import { fetchMasterData } from '../api/masterDataService'
-import { inventoryDashboardQueryKey, masterDataQueryKey, siteMaterialsQueryKey } from '../api/queryKeys'
+import { masterDataQueryKey, siteMaterialsQueryKey } from '../api/queryKeys'
 import {
   bulkUpdateSiteMaterialAssignments,
   fetchSiteMaterials,
@@ -141,6 +143,8 @@ function SiteMaterialsPage() {
   const masterDataQuery = useQuery({
     queryKey: masterDataQueryKey(selectedTenantId),
     queryFn: () => fetchMasterData({ tenantId: selectedTenantId }),
+    staleTime: LOOKUP_STALE_TIME_MS,
+    placeholderData: (previousData) => previousData,
   })
   const sites = (masterDataQuery.data?.data.entities ?? []).filter((entity) => entity.entity_type === 'INTERNAL_SITE')
   const selectedSiteId = sites.some((site) => site.id === siteSelection)
@@ -154,11 +158,7 @@ function SiteMaterialsPage() {
   })
 
   async function refreshAssignments() {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: siteMaterialsQueryKey(selectedTenantId, selectedSiteId) }),
-      queryClient.invalidateQueries({ queryKey: inventoryDashboardQueryKey(selectedTenantId, selectedSiteId) }),
-      queryClient.invalidateQueries({ queryKey: inventoryDashboardQueryKey(selectedTenantId) }),
-    ])
+    await invalidateTenantLookupAndSummaryData(queryClient, selectedTenantId, selectedSiteId)
   }
 
   const saveMutation = useMutation({
@@ -230,8 +230,8 @@ function SiteMaterialsPage() {
         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{selectedTenantName}</p>
       </header>
 
-      <div className="flex flex-col gap-3 border-y border-slate-200 bg-white px-4 py-3 md:flex-row md:items-end">
-        <label className="min-w-64 space-y-1 text-sm font-medium text-slate-700">
+      <div className="flex flex-col gap-3 border-y border-slate-200 bg-white px-4 py-3 md:flex-row md:flex-wrap md:items-end">
+        <label className="w-full space-y-1 text-sm font-medium text-slate-700 md:w-56">
           <span>Site</span>
           <select
             value={selectedSiteId}
@@ -241,7 +241,7 @@ function SiteMaterialsPage() {
             {sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
           </select>
         </label>
-        <label className="min-w-64 flex-1 space-y-1 text-sm font-medium text-slate-700">
+        <label className="w-full flex-1 space-y-1 text-sm font-medium text-slate-700 md:min-w-0">
           <span>Search materials</span>
           <input
             type="search"

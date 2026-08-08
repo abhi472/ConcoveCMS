@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { LOOKUP_STALE_TIME_MS } from '../api/cachePolicy'
 import { fetchMasterData } from '../api/masterDataService'
 import { masterDataQueryKey } from '../api/queryKeys'
 import { useCreateAndDispatchSiteTransfer, useReceiveSiteTransfer, useSiteTransfers } from '../api/siteTransferQueries'
@@ -48,6 +49,8 @@ function SiteTransfersPage() {
   const masterDataQuery = useQuery({
     queryKey: masterDataQueryKey(selectedTenantId),
     queryFn: () => fetchMasterData({ tenantId: selectedTenantId }),
+    staleTime: LOOKUP_STALE_TIME_MS,
+    placeholderData: (previousData) => previousData,
   })
   const entities = masterDataQuery.data?.data.entities ?? []
   const materials = useMemo(

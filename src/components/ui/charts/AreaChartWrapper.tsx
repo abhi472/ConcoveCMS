@@ -12,6 +12,7 @@ export function AreaChartWrapper({
   return (
     <AreaChart
       className={className}
+      style={{ fontFamily: 'inherit' }}
       data={data}
       index={indexKey}
       categories={categories}

@@ -6,6 +6,7 @@ import { fetchSiteMaterials } from '../api/siteMaterialService'
 import { fetchPurchaseOrders } from '../api/purchaseOrdersService'
 import { fetchTransactionHistory } from '../api/transactionHistoryService'
 import { fetchAuditEvents } from '../api/auditService'
+import EntityModalShell from '../components/EntityModalShell'
 import {
   archiveEntity,
   createEntity,
@@ -21,6 +22,7 @@ import {
   type EntityInput,
   type ManagedEntity,
 } from '../api/entitiesService'
+import { invalidateTenantLookupAndSummaryData } from '../api/cacheInvalidation'
 import { auditEventsQueryKey, entitiesQueryKey, entitySitesQueryKey, inventoryBalancesQueryKey, purchaseOrdersQueryKey, siteMaterialsQueryKey, transactionsQueryKey } from '../api/queryKeys'
 import { useAuthContext } from '../context/useAuthContext'
 import { useTenantContext } from '../context/useTenantContext'
@@ -114,11 +116,15 @@ function downloadCsvTemplate(filename: string, content: string) {
   URL.revokeObjectURL(url)
 }
 
-function EntitiesPage() {
+type EntitiesPageProps = {
+  forcedEntityType?: EntityType
+}
+
+function EntitiesPage({ forcedEntityType }: EntitiesPageProps) {
   const queryClient = useQueryClient()
   const { user } = useAuthContext()
   const { selectedTenantId, selectedTenantName } = useTenantContext()
-  const [entityType, setEntityType] = useState<EntityType>('INTERNAL_SITE')
+  const [entityType, setEntityType] = useState<EntityType>(forcedEntityType ?? 'INTERNAL_SITE')
   const [search, setSearch] = useState('')
   const deferredSearch = useDeferredValue(search)
   const [status, setStatus] = useState<'active' | 'archived' | 'all'>('active')
@@ -192,11 +198,7 @@ function EntitiesPage() {
   }, [isDirty])
 
   async function invalidateEntityData(entityId?: string) {
-    const invalidations = [
-      queryClient.invalidateQueries({ queryKey: ['entities', selectedTenantId] }),
-      queryClient.invalidateQueries({ queryKey: ['master-data', selectedTenantId] }),
-      queryClient.invalidateQueries({ queryKey: ['inventory-dashboard', selectedTenantId] }),
-    ]
+    const invalidations = [invalidateTenantLookupAndSummaryData(queryClient, selectedTenantId)]
     if (entityId) invalidations.push(queryClient.invalidateQueries({ queryKey: entitySitesQueryKey(selectedTenantId, entityId) }))
     await Promise.all(invalidations)
   }
@@ -306,6 +308,7 @@ function EntitiesPage() {
   const total = entitiesQuery.data?.pagination.total ?? 0
   const pageCount = Math.max(1, Math.ceil(total / 50))
   const associations = associationsQuery.data ?? []
+  const selectedEntityType = entityTypes.find((item) => item.value === entityType)
 
   const handleDownloadEntityTemplate = () => {
     const headers = 'entity_type,name,location_code,address,manager_name,capacity_notes,contact_name,phone,gst_number,employee_code,designation,specialty,registration_number'
@@ -326,12 +329,12 @@ function EntitiesPage() {
     <section className="space-y-4">
       <header className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
         <div>
-          <h2 className="text-xl font-semibold text-slate-900">Entities</h2>
+          <h2 className="text-xl font-semibold text-slate-900">{selectedEntityType?.label ?? 'Entities'}</h2>
           <p className="mt-1 text-sm text-slate-600">Sites, vendors, employees, subcontractors, and their operating relationships.</p>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{selectedTenantName}</span>
-          <button type="button" disabled={!canManageEntities} onClick={openCreate} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Add {entityTypes.find((item) => item.value === entityType)?.label.slice(0, -1)}</button>
+          <button type="button" disabled={!canManageEntities} onClick={openCreate} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Add {selectedEntityType?.label.slice(0, -1)}</button>
         </div>
       </header>
 
@@ -340,7 +343,7 @@ function EntitiesPage() {
       <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
         <h3 className="text-sm font-semibold text-slate-900">Bulk CSV Upload</h3>
         <p className="mt-1 text-xs text-slate-600">
-          Upload {entityTypes.find((item) => item.value === entityType)?.label.toLowerCase()} with headers: name, location_code, address, manager_name, capacity_notes, contact_name, phone, gst_number, employee_code, designation, specialty, registration_number. Optional: entity_type.
+          Upload {selectedEntityType?.label.toLowerCase()} with headers: name, location_code, address, manager_name, capacity_notes, contact_name, phone, gst_number, employee_code, designation, specialty, registration_number. Optional: entity_type.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <input
@@ -370,20 +373,22 @@ function EntitiesPage() {
         {csvImportResult ? <div className="mt-3 max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white"><table className="min-w-full divide-y divide-slate-200 text-xs"><thead className="bg-slate-50"><tr><th className="px-2 py-1.5 text-left">Row</th><th className="px-2 py-1.5 text-left">Reference</th><th className="px-2 py-1.5 text-left">Status</th><th className="px-2 py-1.5 text-left">Message</th></tr></thead><tbody className="divide-y divide-slate-100">{csvImportResult.results.map((row) => <tr key={`${row.row_number}-${row.reference}`}><td className="px-2 py-1.5">{row.row_number}</td><td className="px-2 py-1.5">{row.reference}</td><td className="px-2 py-1.5">{row.sync_status}</td><td className="px-2 py-1.5">{row.message}</td></tr>)}</tbody></table></div> : null}
       </div>
 
-      <div className="border-b border-slate-200">
-        <div className="flex overflow-x-auto">
-          {entityTypes.map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              onClick={() => { setEntityType(item.value); setPage(1); setFeedback(null) }}
-              className={`border-b-2 px-4 py-3 text-sm font-semibold ${entityType === item.value ? 'border-amber-500 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
-            >
-              {item.label}
-            </button>
-          ))}
+      {!forcedEntityType ? (
+        <div className="border-b border-slate-200">
+          <div className="flex overflow-x-auto">
+            {entityTypes.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => { setEntityType(item.value); setPage(1); setFeedback(null) }}
+                className={`border-b-2 px-4 py-3 text-sm font-semibold ${entityType === item.value ? 'border-amber-500 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="grid gap-3 bg-white px-4 py-3 md:grid-cols-[minmax(14rem,1fr)_12rem]">
         <label className="space-y-1 text-sm font-medium text-slate-700">
@@ -412,8 +417,7 @@ function EntitiesPage() {
         <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-600"><span>{total.toLocaleString()} records</span><div className="flex items-center gap-3"><button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-40">Previous</button><span>Page {page} of {pageCount}</span><button type="button" disabled={page >= pageCount} onClick={() => setPage((value) => value + 1)} className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-40">Next</button></div></div>
       </div> : null}
 
-      {isEditorOpen ? <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEditor() }}><div className="h-full w-full max-w-lg overflow-y-auto bg-white p-6 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="entity-editor-title">
-        <div className="flex items-start justify-between"><div><h3 id="entity-editor-title" className="text-lg font-semibold text-slate-900">{editingEntity ? 'Edit' : 'Add'} {entityTypes.find((item) => item.value === form.entityType)?.label.slice(0, -1)}</h3><p className="mt-1 text-sm text-slate-600">Profile fields adapt to the selected entity type.</p></div><button type="button" onClick={closeEditor} aria-label="Close entity editor" className="text-2xl text-slate-500">×</button></div>
+      {isEditorOpen ? <EntityModalShell titleId="entity-editor-title" title={`${editingEntity ? 'Edit' : 'Add'} ${entityTypes.find((item) => item.value === form.entityType)?.label.slice(0, -1)}`} subtitle="Profile fields adapt to the selected entity type." maxWidthClassName="max-w-lg" onClose={closeEditor}>
         <form className="mt-6 space-y-4" onSubmit={(event) => { event.preventDefault(); if (canManageEntities && form.name.trim()) saveMutation.mutate() }}>
           {!editingEntity ? <label className="block space-y-1 text-sm font-medium text-slate-700"><span>Type</span><select disabled={!canManageEntities} value={form.entityType} onChange={(event) => { setForm({ ...emptyForm, entityType: event.target.value as EntityType }); setIsDirty(true) }} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 disabled:bg-slate-100">{entityTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label> : null}
           <label className="block space-y-1 text-sm font-medium text-slate-700"><span>Name</span><input disabled={!canManageEntities} value={form.name} onChange={(event) => { setForm((value) => ({ ...value, name: event.target.value })); setIsDirty(true) }} className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></label>
@@ -421,15 +425,14 @@ function EntitiesPage() {
           {feedback?.kind === 'error' ? <p className="border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{feedback.message}</p> : null}
           <div className="flex justify-end gap-2 border-t border-slate-200 pt-4"><button type="button" onClick={closeEditor} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button><button type="submit" disabled={!canManageEntities || !form.name.trim() || saveMutation.isPending} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{saveMutation.isPending ? 'Saving...' : 'Save'}</button></div>
         </form>
-      </div></div> : null}
+      </EntityModalShell> : null}
 
-      {detailsTarget ? <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailsTarget(null) }}><div className="h-full w-full max-w-2xl overflow-y-auto bg-white p-6 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="entity-details-title">
-        <div className="flex items-start justify-between gap-4"><div><h3 id="entity-details-title" className="text-lg font-semibold text-slate-900">{detailsTarget.name}</h3><p className="mt-1 text-sm text-slate-600">{detailsTarget.entity_type.replace('_', ' ')} · {detailsTarget.archived_at ? 'Archived' : 'Active'}</p></div><button type="button" onClick={() => setDetailsTarget(null)} aria-label="Close entity details" className="text-2xl text-slate-500">×</button></div>
+      {detailsTarget ? <EntityModalShell titleId="entity-details-title" title={detailsTarget.name} subtitle={`${detailsTarget.entity_type.replace('_', ' ')} · ${detailsTarget.archived_at ? 'Archived' : 'Active'}`} maxWidthClassName="max-w-2xl" onClose={() => setDetailsTarget(null)}>
         <dl className="mt-5 grid gap-3 border-y border-slate-200 py-4 text-sm sm:grid-cols-2">{profileFields[detailsTarget.entity_type].map((field) => {
           const apiKey = field.key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`) as keyof ManagedEntity
           return <div key={field.key}><dt className="text-xs text-slate-500">{field.label}</dt><dd className="font-medium text-slate-900">{String(detailsTarget[apiKey] ?? '—')}</dd></div>
         })}</dl>
-        <div className="mt-4 flex flex-wrap gap-2">{detailsTarget.entity_type === 'INTERNAL_SITE' ? <><Link to={`/site-materials?site=${detailsTarget.id}`} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Manage materials</Link><Link to={`/dashboard?site=${detailsTarget.id}`} className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Open dashboard</Link><Link to={`/operations?mode=ledger&site=${detailsTarget.id}`} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Record movement</Link></> : <button type="button" disabled={!canManageEntities} onClick={() => { setDetailsTarget(null); setAssociationTarget(detailsTarget) }} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">Manage sites</button>}</div>
+        <div className="mt-4 flex flex-wrap gap-2">{detailsTarget.entity_type === 'INTERNAL_SITE' ? <><Link to={`/materials?view=assignments&site=${detailsTarget.id}`} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Manage materials</Link><Link to={`/dashboard?site=${detailsTarget.id}`} className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Open dashboard</Link><Link to={`/operations?mode=ledger&site=${detailsTarget.id}`} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Record movement</Link></> : <button type="button" disabled={!canManageEntities} onClick={() => { setDetailsTarget(null); setAssociationTarget(detailsTarget) }} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">Manage sites</button>}</div>
         <div className="mt-6 space-y-5 text-sm">
           {detailsTarget.entity_type === 'INTERNAL_SITE' ? <section><h4 className="font-semibold text-slate-900">Stock exceptions</h4><p className="mt-1 text-xs text-slate-500">{(detailsAssignmentsQuery.data ?? []).filter((item) => item.is_active).length} assigned materials</p><div className="mt-2 space-y-2">{(detailsBalancesQuery.data?.data ?? []).filter((balance) => balance.status !== 'OK').slice(0, 8).map((balance) => <div key={balance.material_id} className="flex justify-between border-b border-slate-100 pb-2"><span>{balance.material_code}</span><span>{balance.quantity_base_uom.toLocaleString()} {balance.base_uom_id} · {balance.status}</span></div>)}{!detailsBalancesQuery.isLoading && !(detailsBalancesQuery.data?.data ?? []).some((balance) => balance.status !== 'OK') ? <p className="text-slate-500">No stock exceptions.</p> : null}</div></section> : null}
           {detailsTarget.entity_type !== 'INTERNAL_SITE' ? <section><h4 className="font-semibold text-slate-900">Site relationships</h4><div className="mt-2 space-y-2">{detailsAssociationsQuery.data?.filter((item) => item.is_active).map((association) => <div key={association.id} className="flex justify-between border-b border-slate-100 pb-2"><span>{association.site_name}</span><span>{association.is_primary ? 'Primary' : association.association_type}</span></div>)}{!detailsAssociationsQuery.isLoading && !detailsAssociationsQuery.data?.some((item) => item.is_active) ? <p className="text-slate-500">No active site relationships.</p> : null}</div></section> : null}
@@ -437,9 +440,9 @@ function EntitiesPage() {
           {detailsTarget.entity_type === 'INTERNAL_SITE' ? <section><h4 className="font-semibold text-slate-900">Recent movements</h4><div className="mt-2 space-y-2">{detailsTransactionsQuery.data?.data.map((transaction) => <div key={transaction.id} className="flex justify-between border-b border-slate-100 pb-2"><span>{transaction.material_code} · {transaction.transaction_type}</span><span>{Number(transaction.quantity).toLocaleString()} {transaction.quantity_uom}</span></div>)}</div></section> : null}
           <section><h4 className="font-semibold text-slate-900">Audit timeline</h4><div className="mt-2 space-y-2">{detailsAuditQuery.data?.data.map((event) => <div key={event.id} className="flex justify-between border-b border-slate-100 pb-2"><span>{event.action} · {event.actor_id}</span><time className="text-xs text-slate-500">{new Date(event.created_at).toLocaleString()}</time></div>)}{!detailsAuditQuery.isLoading && detailsAuditQuery.data?.data.length === 0 ? <p className="text-slate-500">No audit events recorded.</p> : null}</div></section>
         </div>
-      </div></div> : null}
+      </EntityModalShell> : null}
 
-      {associationTarget ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"><div className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl" role="dialog" aria-modal="true"><div className="flex items-start justify-between"><div><h3 className="text-lg font-semibold text-slate-900">Sites for {associationTarget.name}</h3><p className="mt-1 text-sm text-slate-600">{associationTarget.entity_type === 'VENDOR' ? 'Preferred sites improve defaults but do not restrict vendor use.' : 'People may work across several sites with one primary site.'}</p></div><button type="button" onClick={() => setAssociationTarget(null)} aria-label="Close site associations" className="text-2xl text-slate-500">×</button></div>
+      {associationTarget ? <EntityModalShell titleId="entity-association-title" title={`Sites for ${associationTarget.name}`} subtitle={associationTarget.entity_type === 'VENDOR' ? 'Preferred sites improve defaults but do not restrict vendor use.' : 'People may work across several sites with one primary site.'} maxWidthClassName="max-w-2xl" onClose={() => setAssociationTarget(null)}>
         {feedback?.kind === 'error' ? <p className="mt-3 border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{feedback.message}</p> : null}
         <div className="mt-4 max-h-96 overflow-y-auto border border-slate-200"><table className="min-w-full divide-y divide-slate-200 text-sm"><thead className="bg-slate-50"><tr><th className="px-3 py-2 text-left">Site</th><th className="px-3 py-2 text-left">Relationship</th><th className="px-3 py-2 text-right">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{(sitesQuery.data?.data ?? []).map((site) => {
           const association = associations.find((item) => item.site_id === site.id && item.is_active)
@@ -447,9 +450,12 @@ function EntitiesPage() {
           return <tr key={site.id}><td className="px-3 py-3 font-medium text-slate-900">{site.name}</td><td className="px-3 py-3 text-slate-600">{association ? association.is_primary ? 'Primary' : association.association_type === 'PREFERRED' ? 'Preferred' : 'Assigned' : 'Not linked'}</td><td className="px-3 py-3"><div className="flex justify-end gap-2">{association ? <>{isPerson && !association.is_primary ? <button type="button" disabled={!canManageEntities} onClick={() => saveAssociationMutation.mutate({ siteId: site.id, isPrimary: true })} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40">Make primary</button> : null}<button type="button" disabled={!canManageEntities} onClick={() => removeAssociationMutation.mutate(site.id)} className="rounded-md border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-40">Remove</button></> : <button type="button" disabled={!canManageEntities} onClick={() => saveAssociationMutation.mutate({ siteId: site.id, isPrimary: false })} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">{isPerson ? 'Assign' : 'Prefer'}</button>}</div></td></tr>
         })}</tbody></table></div>
         {associationsQuery.isLoading || sitesQuery.isLoading ? <p className="mt-3 text-sm text-slate-500">Loading sites...</p> : null}
-      </div></div> : null}
+      </EntityModalShell> : null}
 
-      {archiveTarget ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"><div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" role="alertdialog" aria-modal="true"><h3 className="text-lg font-semibold text-slate-900">Archive {archiveTarget.name}?</h3><p className="mt-2 text-sm text-slate-600">Historical references remain readable. Current stock, open purchase orders, or active site relationships may block this action.</p>{feedback?.kind === 'error' ? <p className="mt-3 border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{feedback.message}</p> : null}<div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setArchiveTarget(null)} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold">Cancel</button><button type="button" disabled={!canManageEntities || archiveMutation.isPending} onClick={() => archiveMutation.mutate(archiveTarget)} className="rounded-md bg-rose-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Archive</button></div></div></div> : null}
+      {archiveTarget ? <EntityModalShell titleId="entity-archive-title" title={`Archive ${archiveTarget.name}?`} subtitle="Historical references remain readable. Current stock, open purchase orders, or active site relationships may block this action." maxWidthClassName="max-w-md" onClose={() => setArchiveTarget(null)} alert>
+        {feedback?.kind === 'error' ? <p className="mt-3 border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{feedback.message}</p> : null}
+        <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setArchiveTarget(null)} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold">Cancel</button><button type="button" disabled={!canManageEntities || archiveMutation.isPending} onClick={() => archiveMutation.mutate(archiveTarget)} className="rounded-md bg-rose-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Archive</button></div>
+      </EntityModalShell> : null}
     </section>
   )
 }

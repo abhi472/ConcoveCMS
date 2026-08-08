@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { useAnalyticsOverviewQuery } from '../api/analyticsQueries'
+import { LOOKUP_STALE_TIME_MS } from '../api/cachePolicy'
 import { formatApiError } from '../api/errorUtils'
 import { fetchMasterData } from '../api/masterDataService'
 import { masterDataQueryKey } from '../api/queryKeys'
@@ -39,7 +40,8 @@ function AnalyticsPage() {
   const masterDataQuery = useQuery({
     queryKey: masterDataQueryKey(selectedTenantId),
     queryFn: () => fetchMasterData({ tenantId: selectedTenantId }),
-    staleTime: 60_000,
+    staleTime: LOOKUP_STALE_TIME_MS,
+    placeholderData: (previousData) => previousData,
   })
   const sites = useMemo(
     () =>
@@ -110,31 +112,8 @@ function AnalyticsPage() {
 
   return (
     <section className="space-y-5">
-      <header className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-r from-amber-50 via-white to-cyan-50 p-6">
-        <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-amber-200/35 blur-2xl" />
-        <div className="absolute -bottom-10 right-24 h-32 w-32 rounded-full bg-cyan-300/30 blur-2xl" />
-        <div className="relative">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Analytics Engine</p>
-          <h2 className="mt-2 text-2xl font-semibold text-slate-900">Material Telemetry & Allocation Intelligence</h2>
-          <p className="mt-2 max-w-3xl text-sm text-slate-600">
-            Adapter-first analytics widgets isolate chart vendor dependencies while surfacing live operational signals for procurement and site execution.
-          </p>
-          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-            <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-1">
-              Scope: {selectedSite?.name ?? 'All internal sites'}
-            </span>
-            <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-1">
-              Window: Last {rangeDays} days
-            </span>
-            <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-1">
-              Updated: {formatGeneratedAt(overviewQuery.data?.generated_at)}
-            </span>
-          </div>
-        </div>
-      </header>
-
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-[minmax(16rem,1fr),auto] md:items-end xl:grid-cols-[minmax(18rem,1fr),auto,auto]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(16rem,20rem),1fr,auto] lg:items-end">
           <label className="min-w-0">
             <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
               Site scope
@@ -173,14 +152,19 @@ function AnalyticsPage() {
             </div>
           </div>
 
-          <button
-            type="button"
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-            onClick={() => overviewQuery.refetch()}
-            disabled={overviewQuery.isFetching}
-          >
-            {overviewQuery.isFetching ? 'Refreshing...' : 'Refresh analytics'}
-          </button>
+          <div className="flex items-center justify-between gap-3 lg:justify-end">
+            <span className="text-xs text-slate-500">
+              {selectedSite?.name ?? 'All internal sites'} · Updated {formatGeneratedAt(overviewQuery.data?.generated_at)}
+            </span>
+            <button
+              type="button"
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+              onClick={() => overviewQuery.refetch()}
+              disabled={overviewQuery.isFetching}
+            >
+              {overviewQuery.isFetching ? 'Refreshing...' : 'Refresh analytics'}
+            </button>
+          </div>
         </div>
       </section>
 

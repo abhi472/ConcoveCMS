@@ -1,5 +1,6 @@
 import { useDeferredValue, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { LOOKUP_STALE_TIME_MS } from '../api/cachePolicy'
 import { fetchMasterData } from '../api/masterDataService'
 import { masterDataQueryKey } from '../api/queryKeys'
 import { useCreateEquipment, useEquipment, useUpdateEquipment } from '../api/equipmentQueries'
@@ -40,6 +41,8 @@ function EquipmentPage() {
   const masterDataQuery = useQuery({
     queryKey: masterDataQueryKey(selectedTenantId),
     queryFn: () => fetchMasterData({ tenantId: selectedTenantId }),
+    staleTime: LOOKUP_STALE_TIME_MS,
+    placeholderData: (previousData) => previousData,
   })
   const sites = (masterDataQuery.data?.data.entities ?? []).filter((entity) => entity.entity_type === 'INTERNAL_SITE')
 

@@ -12,6 +12,7 @@ export function BarChartWrapper({
   return (
     <BarChart
       className={className}
+      style={{ fontFamily: 'inherit' }}
       data={data}
       index={indexKey}
       categories={categories}
