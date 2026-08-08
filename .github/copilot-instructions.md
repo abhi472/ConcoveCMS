@@ -12,6 +12,11 @@ Deliver production-safe, tenant-aware inventory CMS changes with clear validatio
 - The user owns deployment.
 - Do not deploy, commit, push, or create pull requests unless explicitly asked.
 
+
+## 7. FEAT Closeout Policy
+- Every completed FEAT must include changelog updates before finalization.
+- Commit strategy must remain atomic by concern (`feat`, `test`, `docs`, `chore`) across all touched files.
+- After FEAT closeout confirmation, push all resulting commits to `origin` so backend and frontend histories stay aligned.
 ## Production Safety
 - Never create or mutate production business records for verification unless explicitly approved for a specific record.
 - Prefer read-only verification: route checks, page load checks, API status checks, and console/network error checks.
