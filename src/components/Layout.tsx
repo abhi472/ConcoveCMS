@@ -1,86 +1,52 @@
-import { Outlet, useLocation } from 'react-router-dom'
-import { useIsFetching, useIsMutating, useQueryClient } from '@tanstack/react-query'
-import { useAuthContext } from '../context/useAuthContext'
-import { useTenantContext } from '../context/useTenantContext'
+import { useEffect, useState } from 'react'
+import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 
 function Layout() {
-  const { user, logout } = useAuthContext()
-  const {
-    selectedTenantId,
-    selectedTenantName,
-  } = useTenantContext()
-  const location = useLocation()
-  const queryClient = useQueryClient()
-  const fetchingCount = useIsFetching()
-  const mutatingCount = useIsMutating()
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
-  const breadcrumbMap: Record<string, string> = {
-    '/': 'Dashboard',
-    '/analytics': 'Analytics / Telemetry',
-    '/materials': 'Materials / Catalog',
-    '/site-materials': 'Materials / Site assignments',
-    '/entities': 'Entities / Directory',
-    '/equipment': 'Equipment / Registry',
-    '/operations': 'Operations',
-    '/sync-monitor': 'Sync Monitor',
-  }
-
-  const params = new URLSearchParams(location.search)
-  const mode = params.get('mode')
-  const breadcrumb = `${breadcrumbMap[location.pathname] ?? 'Workspace'}${mode ? ` / ${mode.replace('-', ' ')}` : ''}`
-  const contextEntries = ['site', 'material', 'po', 'retry', 'correction']
-    .map((key) => [key, params.get(key)] as const)
-    .filter((entry): entry is readonly [string, string] => Boolean(entry[1]))
-  const tenantQueries = queryClient.getQueryCache().findAll({
-    predicate: (query) => query.queryKey.includes(selectedTenantId),
-  })
-  const hasQueryError = tenantQueries.some((query) => query.state.status === 'error')
-  const lastUpdatedAt = Math.max(0, ...tenantQueries.map((query) => query.state.dataUpdatedAt))
-  const freshness = lastUpdatedAt
-    ? new Date(lastUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    : 'Waiting for data'
+  useEffect(() => {
+    document.body.style.overflow = mobileNavOpen ? 'hidden' : ''
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [mobileNavOpen])
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      <Sidebar />
-      <div className="flex flex-1 flex-col">
-        <header className="border-b border-slate-200 bg-white px-6 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                {breadcrumb}
-              </p>
-              <h1 className="mt-1 text-lg font-semibold text-slate-900">{selectedTenantName}</h1>
-              {contextEntries.length > 0 ? <div className="mt-2 flex flex-wrap gap-1.5">{contextEntries.map(([key, value]) => <span key={key} className="max-w-56 truncate rounded border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[11px] text-slate-600">{key}: {value}</span>)}</div> : null}
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className={`rounded-md border px-2 py-1 text-xs font-medium ${hasQueryError ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-                {hasQueryError ? 'API attention needed' : fetchingCount > 0 ? 'Refreshing API data' : 'API data available'}
-              </div>
-              <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">
-                {mutatingCount > 0 ? `${mutatingCount} change${mutatingCount === 1 ? '' : 's'} saving` : `Fresh as of ${freshness}`}
-              </div>
-              <div className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600" title="Authenticated user identity">
-                User: {user?.email ?? 'Unknown'}
-              </div>
-              <div className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600" title="Role scope">
-                Role: {user?.role ?? 'Unknown'}
-              </div>
-              <button
-                type="button"
-                onClick={() => { void logout() }}
-                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100"
-              >
-                Logout
-              </button>
-            </div>
-          </div>
-        </header>
-        <main className="flex-1 p-6">
+    <div className="min-h-screen bg-slate-50 lg:flex">
+      <div className="hidden lg:block lg:shrink-0">
+        <Sidebar />
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="sticky top-0 z-30 border-b border-slate-200 bg-slate-50/95 px-4 py-3 backdrop-blur lg:hidden">
+          <button
+            type="button"
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm"
+            onClick={() => setMobileNavOpen(true)}
+          >
+            Menu
+          </button>
+        </div>
+
+        <main className="min-w-0 flex-1 p-4 sm:p-5 lg:p-6">
           <Outlet />
         </main>
       </div>
+
+      {mobileNavOpen ? (
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation drawer">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/50"
+            aria-label="Close navigation drawer"
+            onClick={() => setMobileNavOpen(false)}
+          />
+          <div className="absolute left-0 top-0 h-full w-[88vw] max-w-sm shadow-2xl">
+            <Sidebar variant="mobile" onNavigate={() => setMobileNavOpen(false)} />
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

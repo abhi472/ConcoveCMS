@@ -1,4 +1,4 @@
-import { Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import Layout from './components/Layout'
 import RequireAuth from './components/RequireAuth'
 import RequireRole from './components/RequireRole'
@@ -10,9 +10,34 @@ import LoginPage from './pages/LoginPage'
 import MaterialsPage from './pages/MaterialsPage'
 import OperationsPage from './pages/OperationsPage'
 import SyncMonitorPage from './pages/SyncMonitorPage'
-import SiteMaterialsPage from './pages/SiteMaterialsPage'
 import SiteTransfersPage from './pages/SiteTransfersPage'
 import UsersPage from './pages/UsersPage'
+import type { EntityType } from './types/schema'
+
+function LegacySiteMaterialsRedirect() {
+  const location = useLocation()
+  const query = new URLSearchParams(location.search)
+  query.delete('view')
+  const suffix = query.toString()
+  return <Navigate to={`/materials?view=assignments${suffix ? `&${suffix}` : ''}`} replace />
+}
+
+function entityRouteFromType(entityType: string | null) {
+  const normalized = entityType?.toUpperCase()
+  if (normalized === 'VENDOR') return '/vendors'
+  if (normalized === 'EMPLOYEE') return '/employees'
+  if (normalized === 'SUBCONTRACTOR') return '/subcontractors'
+  return '/sites'
+}
+
+function LegacyEntitiesRedirect() {
+  const location = useLocation()
+  const query = new URLSearchParams(location.search)
+  const targetPath = entityRouteFromType(query.get('entityType'))
+  query.delete('entityType')
+  const suffix = query.toString()
+  return <Navigate to={`${targetPath}${suffix ? `?${suffix}` : ''}`} replace />
+}
 
 function App() {
   return (
@@ -23,8 +48,12 @@ function App() {
           <Route index element={<Dashboard />} />
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="materials" element={<MaterialsPage />} />
-          <Route path="site-materials" element={<SiteMaterialsPage />} />
-          <Route path="entities" element={<EntitiesPage />} />
+          <Route path="site-materials" element={<LegacySiteMaterialsRedirect />} />
+          <Route path="entities" element={<LegacyEntitiesRedirect />} />
+          <Route path="sites" element={<EntitiesPage forcedEntityType={'INTERNAL_SITE' satisfies EntityType} />} />
+          <Route path="vendors" element={<EntitiesPage forcedEntityType={'VENDOR' satisfies EntityType} />} />
+          <Route path="employees" element={<EntitiesPage forcedEntityType={'EMPLOYEE' satisfies EntityType} />} />
+          <Route path="subcontractors" element={<EntitiesPage forcedEntityType={'SUBCONTRACTOR' satisfies EntityType} />} />
           <Route path="equipment" element={<EquipmentPage />} />
           <Route path="operations" element={<OperationsPage />} />
           <Route path="site-transfers" element={<SiteTransfersPage />} />

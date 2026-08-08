@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { invalidateTenantLookupAndSummaryData } from './cacheInvalidation'
 import { equipmentQueryKey } from './queryKeys'
 import {
   createEquipment,
@@ -20,7 +21,10 @@ export function useCreateEquipment(tenantId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: EquipmentInput) => createEquipment(tenantId, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['equipment', tenantId] }),
+    onSuccess: async () => {
+      await invalidateTenantLookupAndSummaryData(queryClient, tenantId)
+      await queryClient.invalidateQueries({ queryKey: ['equipment', tenantId] })
+    },
   })
 }
 
@@ -29,6 +33,9 @@ export function useUpdateEquipment(tenantId: string) {
   return useMutation({
     mutationFn: ({ equipmentId, input }: { equipmentId: string; input: EquipmentInput }) =>
       updateEquipment(tenantId, equipmentId, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['equipment', tenantId] }),
+    onSuccess: async () => {
+      await invalidateTenantLookupAndSummaryData(queryClient, tenantId)
+      await queryClient.invalidateQueries({ queryKey: ['equipment', tenantId] })
+    },
   })
 }

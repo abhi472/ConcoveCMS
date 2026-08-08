@@ -1,0 +1,2 @@
+export const SUMMARY_STALE_TIME_MS = 60_000
+export const LOOKUP_STALE_TIME_MS = 5 * 60_000

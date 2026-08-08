@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { invalidateTenantLookupAndSummaryData } from './cacheInvalidation'
 import { siteTransferQueryKey, siteTransfersQueryKey } from './queryKeys'
 import {
   createAndDispatchSiteTransfer,
@@ -31,7 +32,10 @@ export function useCreateAndDispatchSiteTransfer(tenantId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: CreateSiteTransferInput) => createAndDispatchSiteTransfer(tenantId, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['site-transfers', tenantId] }),
+    onSuccess: async () => {
+      await invalidateTenantLookupAndSummaryData(queryClient, tenantId)
+      await queryClient.invalidateQueries({ queryKey: ['site-transfers', tenantId] })
+    },
   })
 }
 
@@ -40,6 +44,9 @@ export function useReceiveSiteTransfer(tenantId: string) {
   return useMutation({
     mutationFn: ({ siteTransferId, lines }: { siteTransferId: string; lines: ReceiveLineInput[] }) =>
       receiveSiteTransfer(tenantId, siteTransferId, lines),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['site-transfers', tenantId] }),
+    onSuccess: async () => {
+      await invalidateTenantLookupAndSummaryData(queryClient, tenantId)
+      await queryClient.invalidateQueries({ queryKey: ['site-transfers', tenantId] })
+    },
   })
 }

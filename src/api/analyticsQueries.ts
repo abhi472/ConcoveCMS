@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { SUMMARY_STALE_TIME_MS } from './cachePolicy'
 import { analyticsOverviewQueryKey } from './queryKeys'
 import { fetchAnalyticsOverview } from './analyticsService'
 
@@ -17,6 +18,6 @@ export function useAnalyticsOverviewQuery({
     queryKey: analyticsOverviewQueryKey(tenantId, siteId, days),
     queryFn: () => fetchAnalyticsOverview({ tenantId, siteId, days }),
     enabled: Boolean(tenantId),
-    staleTime: 60_000,
+    staleTime: SUMMARY_STALE_TIME_MS,
   })
 }

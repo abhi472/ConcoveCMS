@@ -13,6 +13,7 @@ function TenantProvider({ children }: PropsWithChildren) {
   const { user } = useAuthContext()
   const queryClient = useQueryClient()
   const selectedTenantId = user?.tenant_id ?? ''
+  const selectedTenantName = user?.tenant_name?.trim() || getTenantNameById(selectedTenantId)
   const previousTenantIdRef = useRef(selectedTenantId)
 
   useEffect(() => {
@@ -44,11 +45,11 @@ function TenantProvider({ children }: PropsWithChildren) {
   const value = useMemo(
     () => ({
       selectedTenantId,
-      selectedTenantName: getTenantNameById(selectedTenantId),
+      selectedTenantName,
       availableTenants,
       setSelectedTenantId: () => {},
     }),
-    [selectedTenantId],
+    [selectedTenantId, selectedTenantName],
   )
 
   return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>
