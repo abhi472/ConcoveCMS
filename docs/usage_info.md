@@ -17,7 +17,7 @@ The active tenant is included in every query key and API request. Changing tenan
 
 ### What It Does
 
-Dashboard gives an operational overview of stock health across the tenant. It combines current balances, site-material thresholds, summary counts, and direct links into stock movement workflows.
+Dashboard gives an operational overview of stock health across the tenant. It combines bounded summary counts, site/entity summaries, priority risks, pending receipts, and direct links into stock movement workflows.
 
 ### How To Use It
 
@@ -26,7 +26,7 @@ Dashboard gives an operational overview of stock health across the tenant. It co
 3. Scan the inventory table. Each row identifies the site, material, current base-unit quantity, applicable threshold, and status.
 4. Use **Record issue** on healthy stock or **Record receipt** on low stock to open Operations with the site, material, and transaction type already selected.
 5. Review **Critical alerts** for combinations requiring immediate replenishment.
-6. Use **Refresh** to request the latest server-calculated balances.
+6. Use **Refresh** to request the latest server-calculated overview.
 
 ### How It Helps
 

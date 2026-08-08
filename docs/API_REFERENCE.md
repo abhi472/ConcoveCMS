@@ -105,10 +105,32 @@ PO-linked INWARD transactions lock the order while validating that it is APPROVE
       "critical_stock_count": 2,
       "out_of_stock_count": 1
     },
-    "balances": [
+    "sites": [
+      { "id": "site-uuid", "name": "Site A1" }
+    ],
+    "entity_counts": [
+      { "entity_type": "INTERNAL_SITE", "entity_count": 4 },
+      { "entity_type": "VENDOR", "entity_count": 12 },
+      { "entity_type": "EMPLOYEE", "entity_count": 18 },
+      { "entity_type": "SUBCONTRACTOR", "entity_count": 3 }
+    ],
+    "site_summaries": [
       {
         "site_id": "site-uuid",
+        "site_name": "Site A1",
+        "material_count": 12,
+        "low_stock_count": 1,
+        "critical_stock_count": 1,
+        "out_of_stock_count": 0
+      }
+    ],
+    "priority_risks": [
+      {
+        "site_id": "site-uuid",
+        "site_name": "Site A1",
         "material_id": "material-uuid",
+        "material_code": "cement",
+        "material_description": "Cement",
         "quantity_base_uom": 120.5,
         "base_uom_id": "KG",
         "threshold_quantity": 150,
@@ -121,7 +143,9 @@ PO-linked INWARD transactions lock the order while validating that it is APPROVE
         "po_id": "po-uuid",
         "po_number": "PO-1042",
         "site_id": "site-uuid",
+        "site_name": "Site A1",
         "material_id": "material-uuid",
+        "material_code": "cement",
         "ordered_quantity_base_uom": 500,
         "received_quantity_base_uom": 200,
         "expected_delivery_date": "2026-07-30"
@@ -131,7 +155,9 @@ PO-linked INWARD transactions lock the order while validating that it is APPROVE
       {
         "transaction_id": "transaction-uuid",
         "site_id": "site-uuid",
+        "site_name": "Site A1",
         "material_id": "material-uuid",
+        "material_code": "cement",
         "transaction_type": "INWARD",
         "quantity": 100,
         "recorded_at": "2026-07-27T10:15:00Z"
@@ -142,11 +168,11 @@ PO-linked INWARD transactions lock the order while validating that it is APPROVE
 ```
 
 **Key Rules:**
-- Balances and status are authoritative backend calculations; the CMS must not reconstruct them from transaction history.
+- Summary counts and priority rows are authoritative backend calculations; the CMS must not reconstruct them from transaction history.
 - Status values are `OK`, `LOW`, `CRITICAL`, or `OUT_OF_STOCK`.
 - When `site_id` is supplied, every summary count and returned collection must be scoped to that site.
-- When `site_id` is omitted, balances include all tenant sites for the heatmap.
-- `generated_at` and each balance `updated_at` must be valid ISO 8601 timestamps.
+- When `site_id` is omitted, overview rows include all tenant sites for the landing view.
+- `generated_at` and each priority-risk `updated_at` must be valid ISO 8601 timestamps.
 
 ### Inventory Balances
 

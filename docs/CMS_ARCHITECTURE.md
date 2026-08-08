@@ -60,6 +60,7 @@ Managed resource services:
 - `entitiesService`: paginated entity CRUD, archive, restore, and site associations
 - `siteMaterialService`: site assignment thresholds, assignment, and safe unassignment
 - `inventoryService`: dashboard aggregates and reusable authoritative balances
+- `inventoryService`: dashboard overview, bounded risks, and reusable authoritative balances
 - `purchaseOrdersService`: list/detail/create/idempotent replay/DRAFT edit/status transitions
 - `transactionHistoryService`: successful ledger history and correction lineage
 - `auditService`: immutable master-data audit history
@@ -195,7 +196,7 @@ Implemented now:
 - Sync Monitor retry persistence across page reloads
 - Immutable correction drafting for successful ledger writes
 - Sync Monitor audit tooling: failure badges, timestamps, grouped correction chains, search, counters, and tenant-scoped local clearing
-- Live inventory dashboard and assignment-aware risk counts
+- Live inventory dashboard overview with bounded risk, receipt, movement, site, and entity summaries
 - Site-material assignment management with threshold editing and structured unassignment blockers
 - Managed tenant material catalog with create, edit, search, filter, sort, pagination, archive, and restore
 - Managed entity catalogs with type-specific profiles, archive/restore, multi-site people assignments, and vendor preferences
