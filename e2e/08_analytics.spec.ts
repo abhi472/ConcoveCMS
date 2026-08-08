@@ -36,7 +36,7 @@ test.describe('Analytics dashboard', () => {
 
     await page.goto('/analytics')
 
-    await expect(page.getByRole('heading', { level: 2, name: 'Material Telemetry & Allocation Intelligence' })).toBeVisible()
+    await expect(page.getByText('Site scope')).toBeVisible()
     await expect(page.getByText('7D Inward Units')).toBeVisible()
     await expect(page.getByText('7D Outward Units')).toBeVisible()
     await expect(page.getByText('Fulfillment Ratio')).toBeVisible()

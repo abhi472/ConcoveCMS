@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test'
 import { bootstrapAuthenticatedSession, installSafetyNetMocks } from './support/api-mocks'
 
 test.describe('RBAC workspace gating', () => {
+  const sidebarSitesLink = 'nav a[title="Sites"]'
+
   test('admin can navigate to users administration page', async ({ page }) => {
     await bootstrapAuthenticatedSession(page)
     await installSafetyNetMocks(page, {
@@ -14,8 +16,9 @@ test.describe('RBAC workspace gating', () => {
 
     await page.goto('/')
 
-    await expect(page.getByText('Role: ADMIN')).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'ConCoveCMS' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Users' })).toBeVisible()
+    await expect(page.locator(sidebarSitesLink)).toBeVisible()
 
     await page.getByRole('link', { name: 'Users' }).click()
     await expect(page.getByRole('heading', { level: 2, name: 'Users & Roles' })).toBeVisible()
@@ -34,9 +37,9 @@ test.describe('RBAC workspace gating', () => {
 
     await page.goto('/')
 
-    await expect(page.getByText('Role: VIEWER')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Users' })).toHaveCount(0)
-    await expect(page.getByRole('link', { name: 'Entities' })).toHaveCount(0)
+    await expect(page.locator(sidebarSitesLink)).toHaveCount(0)
 
     await page.goto('/users')
     await expect(page.getByText('You do not have permission to access this workspace.')).toBeVisible()
@@ -76,14 +79,14 @@ test.describe('RBAC workspace gating', () => {
     })
 
     await page.goto('/')
-    await expect(page.getByText('Role: SITE_MANAGER')).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Entities' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'ConCoveCMS' })).toBeVisible()
+    await expect(page.locator(sidebarSitesLink)).toBeVisible()
     await expect(page.getByRole('link', { name: 'Users' })).toHaveCount(0)
 
     await page.goto('/materials')
     await expect(page.getByRole('button', { name: 'Add Material' })).toBeEnabled()
 
-    await page.goto('/entities')
+    await page.goto('/sites')
     await expect(page.getByRole('button', { name: 'Add Site' })).toBeEnabled()
 
     await page.goto('/users')
@@ -101,9 +104,9 @@ test.describe('RBAC workspace gating', () => {
     })
 
     await page.goto('/')
-    await expect(page.getByText('Role: OPERATOR')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Users' })).toHaveCount(0)
-    await expect(page.getByRole('link', { name: 'Entities' })).toHaveCount(0)
+    await expect(page.locator(sidebarSitesLink)).toHaveCount(0)
 
     await page.goto('/materials')
     await expect(page.getByText('Your role has read-only access for material catalog data.')).toBeVisible()

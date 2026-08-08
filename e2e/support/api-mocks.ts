@@ -80,7 +80,20 @@ export async function installSafetyNetMocks(page: Page, options?: { user?: Parti
     if (pathname.endsWith('/inventory/dashboard')) {
       await fulfillJson(route, {
         generated_at: new Date().toISOString(),
-        data: { summary: { material_count: 0, low_stock_count: 0, critical_stock_count: 0, out_of_stock_count: 0 }, balances: [], pending_receipts: [], recent_movements: [] },
+        data: {
+          summary: { material_count: 0, low_stock_count: 0, critical_stock_count: 0, out_of_stock_count: 0 },
+          sites: [],
+          entity_counts: [
+            { entity_type: 'INTERNAL_SITE', entity_count: 0 },
+            { entity_type: 'VENDOR', entity_count: 0 },
+            { entity_type: 'EMPLOYEE', entity_count: 0 },
+            { entity_type: 'SUBCONTRACTOR', entity_count: 0 },
+          ],
+          site_summaries: [],
+          priority_risks: [],
+          pending_receipts: [],
+          recent_movements: [],
+        },
       })
       return
     }
